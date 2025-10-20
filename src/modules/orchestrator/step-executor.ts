@@ -196,20 +196,62 @@ export class StepExecutorFactory {
   private static executors: Map<MigrationStep, BaseStepExecutor> = new Map();
 
   static {
-    // Register all step executors
-    this.executors.set(MigrationStep.INITIAL_SCAN, new InitialScanExecutor());
-    // TODO: Register other executors as they are implemented
+    // Import executors dynamically to avoid circular dependencies
+    // Actual registration happens in initializeExecutors()
+  }
+
+  /**
+   * Initialize and register all step executors
+   * Call this before using the factory
+   */
+  public static async initializeExecutors(): Promise<void> {
+    if (this.executors.size > 0) {
+      return; // Already initialized
+    }
+
+    // Dynamically import executors to avoid circular dependencies
+    const {
+      ScanExecutor,
+      ProtectExecutor,
+      GenerateExecutor,
+      CompareExecutor,
+      RemoveExecutor,
+      ImportExecutor,
+      DeployExecutor,
+      VerifyExecutor,
+      CleanupExecutor
+    } = await import('./steps');
+
+    // Register all executors
+    this.executors.set(MigrationStep.INITIAL_SCAN, new ScanExecutor());
+    this.executors.set(MigrationStep.DISCOVERY, new ProtectExecutor());
+    this.executors.set(MigrationStep.CDK_GENERATION, new GenerateExecutor());
+    this.executors.set(MigrationStep.COMPARISON, new CompareExecutor());
+    this.executors.set(MigrationStep.TEMPLATE_MODIFICATION, new RemoveExecutor());
+    this.executors.set(MigrationStep.IMPORT_PREPARATION, new ImportExecutor());
+    this.executors.set(MigrationStep.VERIFICATION, new DeployExecutor());
+    this.executors.set(MigrationStep.COMPLETE, new CleanupExecutor());
   }
 
   public static getExecutor(step: MigrationStep): BaseStepExecutor {
     const executor = this.executors.get(step);
     if (!executor) {
-      throw new Error(`No executor registered for step: ${step}`);
+      throw new Error(
+        `No executor registered for step: ${step}. Did you call initializeExecutors()?`
+      );
     }
     return executor;
   }
 
   public static registerExecutor(step: MigrationStep, executor: BaseStepExecutor): void {
     this.executors.set(step, executor);
+  }
+
+  public static hasExecutor(step: MigrationStep): boolean {
+    return this.executors.has(step);
+  }
+
+  public static getAllExecutors(): Map<MigrationStep, BaseStepExecutor> {
+    return new Map(this.executors);
   }
 }
