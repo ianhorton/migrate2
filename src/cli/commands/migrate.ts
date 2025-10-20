@@ -99,14 +99,14 @@ async function executeMigration(options: any): Promise<void> {
     const orchestrator = new MigrationOrchestrator();
 
     // Set up progress tracking
-    let currentSpinner: ora.Ora | null = null;
+    let currentSpinner: any = null;
 
     const onProgress = (step: MigrationStep, progress: number) => {
       displayProgress(step, progress);
     };
 
     const onStepComplete = (result: StepResult) => {
-      if (currentSpinner) {
+      if (currentSpinner && typeof currentSpinner.stop === 'function') {
         currentSpinner.stop();
       }
       displayStepResult(result);

@@ -32,7 +32,8 @@ export class ServerlessParser {
       }
 
       // Resolve simple variable substitutions
-      this.config = this.resolveVariables(parsed);
+      const resolved = this.resolveVariables(parsed) as ParsedServerlessConfig;
+      this.config = resolved;
       return this.config;
     } catch (error) {
       throw new Error(
