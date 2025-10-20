@@ -1,0 +1,53 @@
+service: migration-sandbox
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  environment:
+    TABLE_NAME: ${self:custom.tableName}
+
+custom:
+  tableName: migration-sandbox-table
+
+functions:
+  counter:
+    handler: src/counter.handler
+    events:
+      - http:
+          path: /counter
+          method: get
+      - http:
+          path: /counter
+          method: post
+    environment:
+      TABLE_NAME: ${self:custom.tableName}
+
+resources:
+  Resources:
+    counterTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+
+    DataBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: migration-sandbox-bucket-${self:provider.stage}
+        VersioningConfiguration:
+          Status: Enabled
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
