@@ -1,0 +1,9 @@
+# AWS CodeArtifact Configuration
+# This project uses essensys-smart-packages private npm registry
+
+# To authenticate, run:
+# npm run auth:codeartifact
+# or manually:
+# aws codeartifact login --tool npm --repository smart-packages --domain essensys-smart-packages --domain-owner 786267582114 --region eu-west-1
+
+# The login command will update your ~/.npmrc with the authentication token

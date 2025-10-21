@@ -24,7 +24,9 @@
     "list": "ts-node src/cli/index.ts list",
     "status": "ts-node src/cli/index.ts status",
     "clean": "rm -rf dist .migration-state coverage",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "auth:codeartifact": "aws codeartifact login --tool npm --repository smart-packages --domain essensys-smart-packages --domain-owner 786267582114 --region eu-west-1",
+    "preinstall": "command -v aws >/dev/null 2>&1 && npm run auth:codeartifact || echo 'AWS CLI not found, skipping CodeArtifact authentication'"
   },
   "keywords": [
     "serverless",
