@@ -54,8 +54,23 @@ export abstract class BaseStepExecutor implements StepExecutor {
       // Execute the actual step logic
       const data = await this.executeStep(state);
 
-      // Validate results
-      const validation = await this.validate(state);
+      // Create temporary state with step result for validation
+      const tempState = {
+        ...state,
+        stepResults: {
+          ...state.stepResults,
+          [this.stepName]: {
+            step: this.stepName,
+            status: MigrationStatus.COMPLETED,
+            startedAt: startTime,
+            completedAt: new Date(),
+            data
+          }
+        }
+      };
+
+      // Validate results using temp state that includes the data
+      const validation = await this.validate(tempState);
       if (!validation.passed) {
         throw new Error(`Step validation failed: ${validation.errors.join(', ')}`);
       }
@@ -213,6 +228,7 @@ export class StepExecutorFactory {
     const {
       ScanExecutor,
       ProtectExecutor,
+      ClassifyExecutor,
       GenerateExecutor,
       CompareExecutor,
       RemoveExecutor,
@@ -225,11 +241,12 @@ export class StepExecutorFactory {
     // Register all executors
     this.executors.set(MigrationStep.INITIAL_SCAN, new ScanExecutor());
     this.executors.set(MigrationStep.DISCOVERY, new ProtectExecutor());
-    this.executors.set(MigrationStep.CDK_GENERATION, new GenerateExecutor());
+    this.executors.set(MigrationStep.CLASSIFICATION, new ClassifyExecutor());
     this.executors.set(MigrationStep.COMPARISON, new CompareExecutor());
     this.executors.set(MigrationStep.TEMPLATE_MODIFICATION, new RemoveExecutor());
+    this.executors.set(MigrationStep.CDK_GENERATION, new GenerateExecutor());
     this.executors.set(MigrationStep.IMPORT_PREPARATION, new ImportExecutor());
-    this.executors.set(MigrationStep.VERIFICATION, new DeployExecutor());
+    this.executors.set(MigrationStep.VERIFICATION, new VerifyExecutor());
     this.executors.set(MigrationStep.COMPLETE, new CleanupExecutor());
   }
 

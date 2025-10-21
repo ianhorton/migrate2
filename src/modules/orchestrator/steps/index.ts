@@ -5,6 +5,7 @@
 
 export { ScanExecutor } from './scan-executor';
 export { ProtectExecutor } from './protect-executor';
+export { ClassifyExecutor } from './classify-executor';
 export { GenerateExecutor } from './generate-executor';
 export { CompareExecutor } from './compare-executor';
 export { RemoveExecutor } from './remove-executor';

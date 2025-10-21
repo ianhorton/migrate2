@@ -6,11 +6,13 @@
 import { BaseStepExecutor } from '../step-executor';
 import {
   MigrationState,
-  MigrationStep,
+  MigrationStep
+} from '../../../types';
+import {
   Resource,
   ResourceInventory,
   CloudFormationTemplate
-} from '../../../types';
+} from '../../../types/migration';
 import { Scanner } from '../../scanner';
 import { Logger } from '../../../utils/logger';
 import * as fs from 'fs/promises';
