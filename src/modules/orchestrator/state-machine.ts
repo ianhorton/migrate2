@@ -10,9 +10,9 @@ export class MigrationStateMachine {
     MigrationStep.INITIAL_SCAN,
     MigrationStep.DISCOVERY,
     MigrationStep.CLASSIFICATION,
-    MigrationStep.COMPARISON,
     MigrationStep.TEMPLATE_MODIFICATION,
     MigrationStep.CDK_GENERATION,
+    MigrationStep.COMPARISON,
     MigrationStep.IMPORT_PREPARATION,
     MigrationStep.VERIFICATION,
     MigrationStep.COMPLETE

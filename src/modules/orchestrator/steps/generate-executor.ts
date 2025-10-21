@@ -242,6 +242,19 @@ export class GenerateExecutor extends BaseStepExecutor {
       this.logger.info(`Initializing CDK project with ${language}...`);
       await fs.mkdir(targetDir, { recursive: true });
 
+      // Authenticate with AWS CodeArtifact before CDK init (organization-specific)
+      try {
+        this.logger.info('Authenticating with AWS CodeArtifact...');
+        execSync(
+          'aws codeartifact login --tool npm --repository smart-packages --domain essensys-smart-packages --domain-owner 786267582114 --region eu-west-1',
+          { stdio: 'pipe' }
+        );
+        this.logger.info('✅ AWS CodeArtifact authentication successful');
+      } catch (authError) {
+        this.logger.warn('⚠️  AWS CodeArtifact authentication failed (continuing anyway)');
+        this.logger.warn('If CDK init fails, run: npm run auth:codeartifact');
+      }
+
       execSync(`cdk init app --language ${language}`, {
         cwd: targetDir,
         stdio: 'inherit'
