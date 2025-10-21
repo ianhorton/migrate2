@@ -61,6 +61,11 @@ export class CompareExecutor extends BaseStepExecutor {
     const generateData = state.stepResults[MigrationStep.CDK_GENERATION].data;
     const cdkTemplatePath = generateData.templatePath;
 
+    // Log which files are being compared
+    this.logger.info('\n📁 Comparing templates:');
+    this.logger.info(`  Serverless: ${slsTemplatePath}`);
+    this.logger.info(`  CDK:        ${cdkTemplatePath}`);
+
     // Verify both templates exist
     await this.verifyTemplateExists(slsTemplatePath, 'Serverless');
     await this.verifyTemplateExists(cdkTemplatePath, 'CDK');
@@ -93,6 +98,10 @@ export class CompareExecutor extends BaseStepExecutor {
         this.logger.warn(`  - ${issue}`);
       });
       this.logger.warn('\nPlease review the comparison report and address these issues before proceeding.');
+      this.logger.warn('\n📄 Templates compared:');
+      this.logger.warn(`  Serverless: ${slsTemplatePath}`);
+      this.logger.warn(`  CDK:        ${cdkTemplatePath}`);
+      this.logger.warn(`  Report:     ${reportPath}`);
     } else {
       this.logger.info('\n✅ Templates are compatible for import');
     }

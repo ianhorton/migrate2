@@ -25,6 +25,14 @@ interface ConstructDefinition {
 }
 
 /**
+ * Property transformer function type
+ */
+type PropertyTransformer = (
+  properties: Record<string, unknown>,
+  resourceRefs: Map<string, string>
+) => Record<string, unknown>;
+
+/**
  * TypeScript code generator
  */
 export class TypeScriptGenerator {
@@ -65,6 +73,22 @@ export class TypeScriptGenerator {
   };
 
   /**
+   * Property transformers for L2 constructs
+   */
+  private readonly PROPERTY_TRANSFORMERS: Record<string, PropertyTransformer> = {
+    'AWS::S3::Bucket': this.transformS3BucketProps.bind(this),
+    'AWS::IAM::Role': this.transformIAMRoleProps.bind(this),
+    'AWS::Lambda::Function': this.transformLambdaFunctionProps.bind(this),
+    'AWS::DynamoDB::Table': this.transformDynamoDBTableProps.bind(this),
+    'AWS::Logs::LogGroup': this.transformLogGroupProps.bind(this),
+  };
+
+  /**
+   * Track resource variable names for cross-references
+   */
+  private resourceRefs: Map<string, string> = new Map();
+
+  /**
    * Generate construct code for a resource
    */
   generateConstruct(resource: Resource, useL2: boolean = true): ConstructCode {
@@ -82,9 +106,23 @@ export class TypeScriptGenerator {
       : definition.l1Class;
 
     const varName = this.toCamelCase(resource.logicalId);
+
+    // Store resource reference for cross-references
+    this.resourceRefs.set(resource.logicalId, varName);
+
+    // Transform properties if using L2 and transformer exists
+    let transformedProps = resource.properties;
+    if (useL2 && this.PROPERTY_TRANSFORMERS[resource.type]) {
+      transformedProps = this.PROPERTY_TRANSFORMERS[resource.type](
+        resource.properties,
+        this.resourceRefs
+      );
+    }
+
     const properties = this.convertProperties(
-      resource.properties,
-      resource.type
+      transformedProps,
+      resource.type,
+      useL2
     );
 
     // Generate the construct code
@@ -136,7 +174,8 @@ export class TypeScriptGenerator {
    */
   convertProperties(
     properties: Record<string, unknown>,
-    resourceType: string
+    resourceType: string,
+    useL2: boolean = true
   ): string {
     const entries: string[] = [];
 
@@ -165,6 +204,10 @@ export class TypeScriptGenerator {
 
     // Handle primitives
     if (typeof value === 'string') {
+      // Check if this is raw CDK code (starts with known CDK patterns)
+      if (this.isRawCDKCode(value)) {
+        return value;
+      }
       return `'${value.replace(/'/g, "\\'")}'`;
     }
 
@@ -208,6 +251,20 @@ export class TypeScriptGenerator {
   }
 
   /**
+   * Check if string is raw CDK code that should not be quoted
+   */
+  private isRawCDKCode(value: string): boolean {
+    const cdkPatterns = [
+      /^(lambda|dynamodb|s3|iam|logs|cdk)\./,  // Module references
+      /^new (lambda|dynamodb|s3|iam|logs|cdk)\./,  // Constructor calls
+      /^\{[\s\S]*\}$/,  // Object literals
+      /^\[[\s\S]*\]$/,  // Array literals
+    ];
+
+    return cdkPatterns.some((pattern) => pattern.test(value));
+  }
+
+  /**
    * Check if value is a CloudFormation intrinsic function
    */
   private isIntrinsicFunction(value: unknown): boolean {
@@ -230,16 +287,43 @@ export class TypeScriptGenerator {
       const ref = value.Ref as string;
       // Check if it's a pseudo parameter
       if (ref.startsWith('AWS::')) {
-        return `cdk.${this.toCamelCase(ref.replace('AWS::', ''))}`;
+        const pseudoParam = ref.replace('AWS::', '');
+        // Map pseudo parameters to CDK equivalents
+        const pseudoParamMap: Record<string, string> = {
+          'Region': 'cdk.Stack.of(this).region',
+          'AccountId': 'cdk.Stack.of(this).account',
+          'Partition': 'cdk.Stack.of(this).partition',
+          'URLSuffix': 'cdk.Stack.of(this).urlSuffix',
+        };
+        return pseudoParamMap[pseudoParam] || `cdk.${this.toCamelCase(pseudoParam)}`;
       }
-      return `${this.toCamelCase(ref)}.ref`;
+      // For L2 constructs, just reference the variable directly
+      return `${this.toCamelCase(ref)}`;
     }
 
     // Handle Fn::GetAtt
     if ('Fn::GetAtt' in value) {
       const getAtt = value['Fn::GetAtt'] as [string, string];
       const [resource, attribute] = getAtt;
-      return `${this.toCamelCase(resource)}.attr${attribute}`;
+      const varName = this.toCamelCase(resource);
+
+      // Map common CloudFormation attributes to L2 properties
+      const attributeMap: Record<string, string> = {
+        'Arn': 'roleArn',
+        'RoleArn': 'roleArn',
+        'FunctionArn': 'functionArn',
+        'BucketArn': 'bucketArn',
+        'TableArn': 'tableArn',
+        'LogGroupArn': 'logGroupArn',
+      };
+
+      const l2Property = attributeMap[attribute];
+      if (l2Property) {
+        return `${varName}.${l2Property}`;
+      }
+
+      // Fallback to attr* pattern for L1
+      return `${varName}.attr${attribute}`;
     }
 
     // Handle Fn::Sub
@@ -286,7 +370,9 @@ export class TypeScriptGenerator {
     return `    const ${varName} = new ${module}.${constructClass}(this, '${logicalId}', {
 ${properties}
     });
-    ${varName}.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);`;
+    ${varName}.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
+    // Preserve exact CloudFormation logical ID for resource import
+    (${varName}.node.defaultChild as cdk.CfnResource).overrideLogicalId('${logicalId}');`;
   }
 
   /**
@@ -328,6 +414,230 @@ ${properties}
       'Condition',
     ];
     return skipProps.includes(key);
+  }
+
+  /**
+   * Transform S3 Bucket properties from CloudFormation to CDK L2
+   */
+  private transformS3BucketProps(
+    properties: Record<string, unknown>,
+    resourceRefs: Map<string, string>
+  ): Record<string, unknown> {
+    const transformed: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (key === 'BucketEncryption') {
+        // Transform BucketEncryption to encryption
+        transformed.encryption = 's3.BucketEncryption.S3_MANAGED';
+      } else if (key === 'BucketName') {
+        transformed.bucketName = value;
+      } else {
+        // Keep other properties with camelCase
+        transformed[this.toCamelCase(key)] = value;
+      }
+    }
+
+    return transformed;
+  }
+
+  /**
+   * Transform IAM Role properties from CloudFormation to CDK L2
+   */
+  private transformIAMRoleProps(
+    properties: Record<string, unknown>,
+    resourceRefs: Map<string, string>
+  ): Record<string, unknown> {
+    const transformed: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (key === 'AssumeRolePolicyDocument') {
+        // Extract service principal from assume role policy
+        const doc = value as any;
+        if (doc?.Statement?.[0]?.Principal?.Service) {
+          const services = doc.Statement[0].Principal.Service;
+          const service = Array.isArray(services) ? services[0] : services;
+          transformed.assumedBy = `new iam.ServicePrincipal('${service}')`;
+        }
+      } else if (key === 'Policies') {
+        // Transform inline policies
+        const policies = value as any[];
+        const firstPolicy = policies[0] as any;
+
+        // PolicyName might be a string or an object (Fn::Join)
+        let policyKey = 'policy';
+        if (typeof firstPolicy.PolicyName === 'string') {
+          policyKey = this.toCamelCase(firstPolicy.PolicyName);
+        } else if (firstPolicy.PolicyName && typeof firstPolicy.PolicyName === 'object') {
+          // Use a generic name if PolicyName is an intrinsic function
+          policyKey = 'lambdaPolicy';
+        }
+
+        transformed.inlinePolicies = `{
+        ${policyKey}: new iam.PolicyDocument({
+          statements: ${this.convertPolicyStatements(firstPolicy.PolicyDocument.Statement)}
+        })
+      }`;
+      } else if (key === 'RoleName') {
+        transformed.roleName = value;
+      } else if (key === 'Path') {
+        transformed.path = value;
+      }
+      // Skip other properties
+    }
+
+    return transformed;
+  }
+
+  /**
+   * Transform Lambda Function properties from CloudFormation to CDK L2
+   */
+  private transformLambdaFunctionProps(
+    properties: Record<string, unknown>,
+    resourceRefs: Map<string, string>
+  ): Record<string, unknown> {
+    const transformed: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (key === 'Code') {
+        // Transform Code to use Code.fromBucket
+        const code = value as any;
+        if (code.S3Bucket && code.S3Key) {
+          const bucketRef = code.S3Bucket.Ref;
+          const bucketVar = bucketRef ? this.toCamelCase(bucketRef) : code.S3Bucket;
+          transformed.code = `lambda.Code.fromBucket(${bucketVar}, '${code.S3Key}')`;
+        }
+      } else if (key === 'Runtime') {
+        // Transform runtime string to Runtime enum
+        const runtime = value as string;
+        // Convert nodejs20.x -> NODEJS_20_X, python3.9 -> PYTHON_3_9
+        const runtimeEnum = runtime.replace(/([a-z]+)(\d+)\.(\w+)/i, (match, name, major, minor) => {
+          return `${name.toUpperCase()}_${major}_${minor.toUpperCase()}`;
+        });
+        transformed.runtime = `lambda.Runtime.${runtimeEnum}`;
+      } else if (key === 'Timeout') {
+        // Transform timeout to Duration
+        transformed.timeout = `cdk.Duration.seconds(${value})`;
+      } else if (key === 'MemorySize') {
+        transformed.memorySize = value;
+      } else if (key === 'Handler') {
+        transformed.handler = value;
+      } else if (key === 'FunctionName') {
+        transformed.functionName = value;
+      } else if (key === 'Description') {
+        transformed.description = value;
+      } else if (key === 'Architectures') {
+        // Transform architecture to enum
+        const archs = value as string[];
+        if (archs && archs.length > 0) {
+          const arch = archs[0].toLowerCase();
+          if (arch === 'arm64') {
+            transformed.architecture = 'lambda.Architecture.ARM_64';
+          } else if (arch === 'x86_64') {
+            transformed.architecture = 'lambda.Architecture.X86_64';
+          }
+        }
+      } else if (key === 'Role') {
+        // Skip role property - Lambda L2 construct doesn't support role directly
+        // The role association should be handled via grantInvoke() or addToRolePolicy()
+        // For imported resources, we'll let CDK infer the role
+      }
+    }
+
+    return transformed;
+  }
+
+  /**
+   * Transform DynamoDB Table properties from CloudFormation to CDK L2
+   */
+  private transformDynamoDBTableProps(
+    properties: Record<string, unknown>,
+    resourceRefs: Map<string, string>
+  ): Record<string, unknown> {
+    const transformed: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (key === 'BillingMode') {
+        // Transform billing mode to enum
+        const mode = value as string;
+        if (mode === 'PAY_PER_REQUEST') {
+          transformed.billingMode = 'dynamodb.BillingMode.PAY_PER_REQUEST';
+        } else if (mode === 'PROVISIONED') {
+          transformed.billingMode = 'dynamodb.BillingMode.PROVISIONED';
+        }
+      } else if (key === 'KeySchema') {
+        // Transform key schema
+        const keySchema = value as any[];
+        const partitionKey = keySchema.find((k: any) => k.KeyType === 'HASH');
+        if (partitionKey) {
+          transformed.partitionKey = `{
+          name: '${partitionKey.AttributeName}',
+          type: dynamodb.AttributeType.STRING
+        }`;
+        }
+        const sortKey = keySchema.find((k: any) => k.KeyType === 'RANGE');
+        if (sortKey) {
+          transformed.sortKey = `{
+          name: '${sortKey.AttributeName}',
+          type: dynamodb.AttributeType.STRING
+        }`;
+        }
+      } else if (key === 'TableName') {
+        transformed.tableName = value;
+      }
+      // Skip AttributeDefinitions as they're inferred from keys
+    }
+
+    return transformed;
+  }
+
+  /**
+   * Transform Log Group properties from CloudFormation to CDK L2
+   */
+  private transformLogGroupProps(
+    properties: Record<string, unknown>,
+    resourceRefs: Map<string, string>
+  ): Record<string, unknown> {
+    const transformed: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(properties)) {
+      if (key === 'LogGroupName') {
+        transformed.logGroupName = value;
+      } else if (key === 'RetentionInDays') {
+        transformed.retention = `logs.RetentionDays.${value}_DAYS`;
+      }
+    }
+
+    return transformed;
+  }
+
+  /**
+   * Convert IAM policy statements to CDK format
+   */
+  private convertPolicyStatements(statements: any[]): string {
+    const convertedStatements = statements.map((stmt) => {
+      const actions = Array.isArray(stmt.Action) ? stmt.Action : [stmt.Action];
+      const resources = Array.isArray(stmt.Resource) ? stmt.Resource : [stmt.Resource];
+
+      const actionList = actions.map((a: string) => `'${a}'`).join(', ');
+      const resourceList = resources.map((r: any) => {
+        if (typeof r === 'string') {
+          return `'${r}'`;
+        } else if (r['Fn::Sub']) {
+          return `cdk.Fn.sub('${r['Fn::Sub']}')`;
+        }
+        return `'${JSON.stringify(r)}'`;
+      }).join(', ');
+
+      return `new iam.PolicyStatement({
+          effect: iam.Effect.${stmt.Effect.toUpperCase()},
+          actions: [${actionList}],
+          resources: [${resourceList}]
+        })`;
+    });
+
+    return `[
+        ${convertedStatements.join(',\n        ')}
+      ]`;
   }
 
   /**

@@ -49,12 +49,16 @@ export class GenerateExecutor extends BaseStepExecutor {
   protected async executeStep(state: MigrationState): Promise<GenerateResult> {
     this.logger.info('Generating CDK code from CloudFormation template...');
 
-    const { targetDir, cdkLanguage, stackName } = state.config;
+    const { targetDir, cdkLanguage } = state.config;
     const scanData = state.stepResults[MigrationStep.INITIAL_SCAN].data;
     const cfTemplate: CloudFormationTemplate = scanData.cloudFormationTemplate;
 
     // Step 1: Initialize CDK project if it doesn't exist
     await this.ensureCDKProject(targetDir, cdkLanguage);
+
+    // Derive stack name from target directory (e.g., "foo-test" -> "FooTestStack")
+    const dirName = path.basename(path.resolve(targetDir));
+    const stackName = this.toPascalCase(dirName) + 'Stack';
 
     // Step 2: Generate CDK code
     this.logger.info('Generating CDK constructs...');
@@ -287,9 +291,26 @@ export class GenerateExecutor extends BaseStepExecutor {
     let filePath: string;
 
     switch (language) {
-      case 'typescript':
-        filePath = path.join(targetDir, 'lib', `${stackName.toLowerCase()}-stack.ts`);
+      case 'typescript': {
+        // Find CDK-generated stack file (e.g., foo-stack.ts)
+        const libDir = path.join(targetDir, 'lib');
+        const dirName = path.basename(path.resolve(targetDir));
+        const cdkGeneratedFile = path.join(libDir, `${dirName}-stack.ts`);
+
+        // Check if CDK already created a stack file
+        const cdkFileExists = await fs.access(cdkGeneratedFile).then(() => true).catch(() => false);
+
+        if (cdkFileExists) {
+          // Use CDK-generated file
+          filePath = cdkGeneratedFile;
+          this.logger.info(`Replacing CDK-generated stack file: ${path.basename(filePath)}`);
+        } else {
+          // Fallback to our naming convention
+          filePath = path.join(libDir, `${stackName.toLowerCase()}-stack.ts`);
+          this.logger.info(`Creating new stack file: ${path.basename(filePath)}`);
+        }
         break;
+      }
       case 'python':
         filePath = path.join(targetDir, stackName.toLowerCase().replace(/-/g, '_'), `${stackName.toLowerCase()}_stack.py`);
         break;
@@ -324,5 +345,16 @@ export class GenerateExecutor extends BaseStepExecutor {
       cwd: targetDir,
       stdio: 'inherit'
     });
+  }
+
+  /**
+   * Convert kebab-case or snake_case to PascalCase
+   * Examples: "foo-test" -> "FooTest", "my_app" -> "MyApp", "foo" -> "Foo"
+   */
+  private toPascalCase(str: string): string {
+    return str
+      .split(/[-_]/) // Split on hyphens or underscores
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join('');
   }
 }
