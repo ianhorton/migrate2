@@ -11,12 +11,20 @@
     "dev": "ts-node src/cli/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
     "typecheck": "tsc --noEmit",
     "migrate": "ts-node src/cli/index.ts migrate",
     "scan": "ts-node src/cli/index.ts scan",
     "compare": "ts-node src/cli/index.ts compare",
-    "generate": "ts-node src/cli/index.ts generate"
+    "generate": "ts-node src/cli/index.ts generate",
+    "verify": "ts-node src/cli/index.ts verify",
+    "rollback": "ts-node src/cli/index.ts rollback",
+    "list": "ts-node src/cli/index.ts list",
+    "status": "ts-node src/cli/index.ts status",
+    "clean": "rm -rf dist .migration-state coverage",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "serverless",
