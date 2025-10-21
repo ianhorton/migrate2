@@ -19,10 +19,22 @@ import { Logger } from '../../utils/logger';
 export class MigrationOrchestrator {
   private stateManager: StateManager;
   private logger: Logger;
+  private executorsInitialized: boolean = false;
 
   constructor(workingDir?: string) {
     this.stateManager = new StateManager(workingDir);
     this.logger = new Logger('MigrationOrchestrator');
+  }
+
+  /**
+   * Initialize step executors
+   */
+  private async ensureExecutorsInitialized(): Promise<void> {
+    if (!this.executorsInitialized) {
+      await StepExecutorFactory.initializeExecutors();
+      this.executorsInitialized = true;
+      this.logger.info('Step executors initialized');
+    }
   }
 
   /**
@@ -33,6 +45,9 @@ export class MigrationOrchestrator {
     options: OrchestratorOptions = {}
   ): Promise<MigrationState> {
     this.logger.info('Starting new migration', { config });
+
+    // Initialize executors
+    await this.ensureExecutorsInitialized();
 
     // Initialize state
     let state = await this.stateManager.initializeState(config);
@@ -56,6 +71,9 @@ export class MigrationOrchestrator {
     options: OrchestratorOptions = {}
   ): Promise<MigrationState> {
     this.logger.info('Resuming migration', { stateId });
+
+    // Initialize executors
+    await this.ensureExecutorsInitialized();
 
     let state = await this.stateManager.loadState(stateId);
 
