@@ -94,31 +94,47 @@ export class GenerateExecutor extends BaseStepExecutor {
       await this.installDependencies(targetDir, cdkLanguage);
     }
 
-    // Step 5: Synthesize CDK stack
+    // Step 5: Synthesize CDK stack (even in dry-run for comparison)
     let synthesized = false;
     let templatePath: string | undefined;
 
-    if (!state.config.dryRun) {
-      this.logger.info('Synthesizing CDK stack...');
-      try {
-        await this.synthesizeCDK(targetDir);
-        synthesized = true;
+    this.logger.info('Synthesizing CDK stack...');
+    try {
+      await this.synthesizeCDK(targetDir);
+      synthesized = true;
 
-        // Find synthesized template
-        templatePath = path.join(targetDir, 'cdk.out', `${stackName}.template.json`);
-        const exists = await fs.access(templatePath).then(() => true).catch(() => false);
+      // Find synthesized template from CDK manifest
+      const manifestPath = path.join(targetDir, 'cdk.out', 'manifest.json');
+      const manifestExists = await fs.access(manifestPath).then(() => true).catch(() => false);
 
-        if (exists) {
+      if (manifestExists) {
+        const manifestContent = await fs.readFile(manifestPath, 'utf8');
+        const manifest = JSON.parse(manifestContent);
+
+        // Find first CloudFormation stack artifact
+        const stackArtifact = Object.values(manifest.artifacts || {}).find(
+          (artifact: any) => artifact.type === 'aws:cloudformation:stack'
+        ) as any;
+
+        if (stackArtifact?.properties?.templateFile) {
+          templatePath = path.join(targetDir, 'cdk.out', stackArtifact.properties.templateFile);
           this.logger.info(`Synthesized template: ${templatePath}`);
+          if (state.config.dryRun) {
+            this.logger.info('(Dry-run mode: template synthesized for comparison only)');
+          }
         } else {
-          this.logger.warn('Synthesized template not found at expected location');
+          this.logger.warn('Could not find stack template in CDK manifest');
         }
-      } catch (error) {
-        this.logger.error('CDK synthesis failed', error);
+      } else {
+        this.logger.warn('CDK manifest not found');
+      }
+    } catch (error) {
+      this.logger.error('CDK synthesis failed', error);
+      if (state.config.dryRun) {
+        this.logger.warn('Comparison step may fail without synthesized template');
+      } else {
         throw new Error(`Failed to synthesize CDK stack: ${error}`);
       }
-    } else {
-      this.logger.info('Skipping synthesis (dry-run mode)');
     }
 
     const result: GenerateResult = {
