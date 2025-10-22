@@ -107,6 +107,31 @@ export interface CloudFormationResource {
   Condition?: string;
 }
 
+/**
+ * Enhanced resource with classification metadata for clean CDK generation
+ * Added in Sprint 1: Resource Classification Enhancement
+ */
+export interface ClassifiedResource extends CloudFormationResource {
+  // Core identification
+  LogicalId: string;
+
+  // Classification flags
+  needsImport: boolean;              // Does this resource exist and need import?
+  isStateful: boolean;               // Should it have RemovalPolicy.RETAIN?
+  isExplicit: boolean;               // Defined in serverless.yml vs abstracted
+
+  // Clean code generation hints
+  managedPolicyEquivalent?: string;  // e.g., "service-role/AWSLambdaBasicExecutionRole"
+  relatedResources: string[];        // Logical IDs of related resources
+  groupId: string;                   // For logical grouping in generated code
+  codeLocation?: string;             // For Lambda functions
+
+  // Code optimization flags
+  suppressLogicalIdOverride?: boolean;  // Don't override logical ID
+  suppressRemovalPolicy?: boolean;      // Don't add RETAIN
+  suppressComments?: boolean;           // No verbose import comments
+}
+
 // Comparison
 export interface TemplateDiff {
   added: Resource[];

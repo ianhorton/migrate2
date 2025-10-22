@@ -25,12 +25,10 @@ export async function interactiveWizard(): Promise<InteractiveAnswers> {
     {
       type: 'input',
       name: 'targetDir',
-      message: 'Target directory for CDK output:',
-      default: './cdk-output',
+      message: 'Target directory for CDK output (leave blank for in-place: <source>/cdk):',
+      default: '',
       validate: (input: string) => {
-        if (!input || input.trim().length === 0) {
-          return 'Target directory is required';
-        }
+        // Target is now optional - empty means in-place mode
         return true;
       }
     },

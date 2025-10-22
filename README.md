@@ -15,10 +15,12 @@ Automates the migration of AWS applications from Serverless Framework to AWS CDK
 
 ### Key Features
 
+✅ **In-Place Migration** ⭐ NEW - Creates CDK project inside Serverless project at `<source>/cdk`
 ✅ **Automated Resource Discovery** - Finds all resources including 60-80% that are abstracted
 ✅ **Intelligent Template Comparison** - Compares CloudFormation templates with severity classification
 ✅ **Safe Migration** - Automatic backups, validation gates, and rollback capability
 ✅ **CDK Code Generation** - Generates production-ready TypeScript CDK code
+✅ **Smart Gitignore Management** - Automatically adds `/cdk/` to .gitignore
 ✅ **State Management** - Resume interrupted migrations at any point
 ✅ **Dry-Run Mode** - Preview all changes before executing them
 
@@ -59,15 +61,34 @@ sls-to-cdk --version
 
 ## ⚡ Quick Start
 
-### Interactive Mode (Recommended)
+### In-Place Migration (Recommended ⭐ NEW)
+
+Creates CDK project inside your Serverless project at `<source>/cdk`:
 
 ```bash
+# Interactive mode - will prompt for source directory
 sls-to-cdk migrate
+
+# Or specify source directly
+sls-to-cdk migrate --source ./my-serverless-app
 ```
 
-The wizard will guide you through the migration process.
+**Directory Structure Created:**
+```
+my-serverless-app/
+├── serverless.yml
+├── handler.js
+├── .serverless/
+└── cdk/                    ← CDK project created here
+    ├── bin/
+    ├── lib/
+    ├── cdk.json
+    └── package.json
+```
 
-### Command-Line Mode
+### Separate Directory Migration
+
+Creates CDK project in a different location (backward compatible):
 
 ```bash
 sls-to-cdk migrate \
@@ -77,7 +98,9 @@ sls-to-cdk migrate \
   --region us-east-1
 ```
 
-### Dry-Run
+### Dry-Run Mode
+
+Preview migration without making changes:
 
 ```bash
 sls-to-cdk migrate --source ./serverless-app --dry-run

@@ -1,0 +1,808 @@
+/**
+ * Sprint 4: CLI Integration Tests (RED Phase - TDD)
+ *
+ * These tests are written BEFORE implementation.
+ * They should all FAIL initially.
+ *
+ * Purpose: Test the CLI integration for in-place CDK generation
+ * - ConfigBuilder integration for target resolution
+ * - DirectoryValidator integration for safety checks
+ * - GitignoreManager integration for .gitignore updates
+ * - Backward compatibility with explicit target
+ */
+
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
+import * as path from 'path';
+
+// Mock modules before imports
+jest.mock('../../../../src/utils/config-builder');
+jest.mock('../../../../src/utils/directory-validator');
+jest.mock('../../../../src/utils/gitignore-manager');
+jest.mock('../../../../src/modules/orchestrator');
+jest.mock('../../../../src/cli/interactive', () => ({
+  interactiveWizard: (jest.fn() as any).mockResolvedValue({
+    sourceDir: '/default/source',
+    targetDir: '/default/target',
+    stage: 'dev',
+    region: 'us-east-1',
+    stackName: 'default-stack',
+    dryRun: false,
+    backupEnabled: true,
+    cdkLanguage: 'typescript'
+  })
+}));
+jest.mock('inquirer', () => ({
+  default: {
+    prompt: jest.fn()
+  }
+}));
+jest.mock('ora', () => {
+  const mockOra = {
+    start: jest.fn().mockReturnThis(),
+    succeed: jest.fn().mockReturnThis(),
+    fail: jest.fn().mockReturnThis(),
+    stop: jest.fn().mockReturnThis(),
+    isSpinning: false
+  };
+  return jest.fn(() => mockOra);
+});
+
+// Now import after mocks are set up
+import { ConfigBuilder } from '../../../../src/utils/config-builder';
+import { DirectoryValidator } from '../../../../src/utils/directory-validator';
+import { GitignoreManager } from '../../../../src/utils/gitignore-manager';
+import { MigrationOrchestrator } from '../../../../src/modules/orchestrator';
+import { interactiveWizard } from '../../../../src/cli/interactive';
+
+// Import the command module - we'll test the executeMigration function
+// Note: Since executeMigration is not exported, we'll need to test through the command interface
+import { createMigrateCommand } from '../../../../src/cli/commands/migrate';
+
+describe('Migrate Command - CLI Integration (Sprint 4)', () => {
+  let mockBuildConfig: jest.Mock;
+  let mockValidateTargetDirectory: jest.Mock;
+  let mockEnsureCdkIgnored: jest.Mock;
+  let mockStartMigration: jest.Mock;
+  let mockResumeMigration: jest.Mock;
+  let mockGetProgress: jest.Mock;
+
+  beforeEach(() => {
+    // Reset all mocks
+    jest.clearAllMocks();
+
+    // Mock process.exit to prevent tests from exiting
+    jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit called with code ${code}`);
+    }) as any);
+
+    // @ts-ignore - Mock setup for testing
+    mockBuildConfig = jest.fn().mockReturnValue({
+      sourceDir: '/absolute/source',
+      targetDir: '/absolute/source/cdk',
+      isInPlace: true,
+      dryRun: false
+    });
+
+    (ConfigBuilder as jest.MockedClass<typeof ConfigBuilder>).mockImplementation(() => ({
+      buildConfig: mockBuildConfig,
+      resolveTargetDirectory: jest.fn(),
+      detectInPlaceMode: jest.fn()
+    } as any));
+
+    // @ts-ignore - Mock setup for testing
+    mockValidateTargetDirectory = jest.fn().mockReturnValue({
+      valid: true,
+      canProceed: true
+    });
+
+    (DirectoryValidator as any).validateTargetDirectory = mockValidateTargetDirectory;
+
+    // @ts-ignore - Mock setup for testing
+    mockEnsureCdkIgnored = jest.fn().mockReturnValue({
+      alreadyExists: true
+    });
+
+    (GitignoreManager as any).ensureCdkIgnored = mockEnsureCdkIgnored;
+
+    // @ts-ignore - Mock setup for testing
+    mockStartMigration = jest.fn().mockResolvedValue({
+      id: 'test-migration-id',
+      status: 'COMPLETED',
+      startedAt: new Date(),
+      completedAt: new Date(),
+      config: {
+        sourceDir: '/absolute/source',
+        targetDir: '/absolute/source/cdk',
+        dryRun: false
+      }
+    });
+
+    // @ts-ignore - Mock setup for testing
+    mockResumeMigration = jest.fn();
+    // @ts-ignore - Mock setup for testing
+    mockGetProgress = jest.fn();
+
+    (MigrationOrchestrator as jest.MockedClass<typeof MigrationOrchestrator>).mockImplementation(() => ({
+      startMigration: mockStartMigration,
+      resumeMigration: mockResumeMigration,
+      getProgress: mockGetProgress
+    } as any));
+
+    // Mock console methods to avoid cluttering test output
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  describe('Target Resolution', () => {
+    /**
+     * Test 1: Explicit target provided
+     *
+     * Given: User provides --source and --target
+     * When: Migration command executes
+     * Then: ConfigBuilder uses the explicit target
+     */
+    it('should use explicit target when provided', async () => {
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve('/my/source'),
+        targetDir: path.resolve('/my/custom-target'),
+        isInPlace: false,
+        dryRun: false
+      });
+
+      const command = createMigrateCommand();
+
+      // Simulate CLI execution: sls-to-cdk migrate --source /my/source --target /my/custom-target
+      await command.parseAsync(['node', 'test', '--source', '/my/source', '--target', '/my/custom-target']);
+
+      // Verify ConfigBuilder was called with explicit target
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: '/my/source',
+          target: '/my/custom-target'
+        })
+      );
+
+      // Verify DirectoryValidator was called with the resolved target
+      expect(mockValidateTargetDirectory).toHaveBeenCalledWith(
+        path.resolve('/my/custom-target')
+      );
+    });
+
+    /**
+     * Test 2: Target missing - should default to <source>/cdk
+     *
+     * Given: User provides only --source (no --target)
+     * When: Migration command executes
+     * Then: ConfigBuilder defaults target to <source>/cdk
+     */
+    it('should default to <source>/cdk when target missing', async () => {
+      const sourcePath = '/my/serverless-app';
+      const expectedTargetPath = path.join(path.resolve(sourcePath), 'cdk');
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: expectedTargetPath,
+        isInPlace: true,
+        dryRun: false
+      });
+
+      const command = createMigrateCommand();
+
+      // Simulate CLI execution: sls-to-cdk migrate --source /my/serverless-app
+      await command.parseAsync(['node', 'test', '--source', sourcePath]);
+
+      // Verify ConfigBuilder was called with undefined target
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: sourcePath,
+          target: undefined
+        })
+      );
+
+      // Verify DirectoryValidator was called with default target
+      expect(mockValidateTargetDirectory).toHaveBeenCalledWith(expectedTargetPath);
+    });
+
+    /**
+     * Test 3: Empty string target - should default to <source>/cdk
+     *
+     * Given: User provides --target '' (empty string)
+     * When: Migration command executes
+     * Then: ConfigBuilder treats it as missing and defaults to <source>/cdk
+     */
+    it('should default to <source>/cdk when target is empty string', async () => {
+      const sourcePath = '/my/serverless-app';
+      const expectedTargetPath = path.join(path.resolve(sourcePath), 'cdk');
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: expectedTargetPath,
+        isInPlace: true,
+        dryRun: false
+      });
+
+      const command = createMigrateCommand();
+
+      // Simulate CLI execution: sls-to-cdk migrate --source /my/serverless-app --target ''
+      await command.parseAsync(['node', 'test', '--source', sourcePath, '--target', '']);
+
+      // Verify ConfigBuilder was called with empty target
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: sourcePath,
+          target: ''
+        })
+      );
+    });
+
+    /**
+     * Test 4: Relative paths converted to absolute
+     *
+     * Given: User provides relative --source path
+     * When: Migration command executes
+     * Then: ConfigBuilder resolves to absolute paths
+     */
+    it('should convert relative paths to absolute', async () => {
+      const relativePath = './my-app';
+      const absolutePath = path.resolve(relativePath);
+      const expectedTargetPath = path.join(absolutePath, 'cdk');
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: absolutePath,
+        targetDir: expectedTargetPath,
+        isInPlace: true,
+        dryRun: false
+      });
+
+      const command = createMigrateCommand();
+
+      // Simulate CLI execution: sls-to-cdk migrate --source ./my-app
+      await command.parseAsync(['node', 'test', '--source', relativePath]);
+
+      // Verify ConfigBuilder was called
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: relativePath,
+          target: undefined
+        })
+      );
+
+      // Verify absolute path was validated
+      expect(mockValidateTargetDirectory).toHaveBeenCalledWith(expectedTargetPath);
+    });
+  });
+
+  describe('Directory Validation', () => {
+    /**
+     * Test 5: Validate target directory before migration
+     *
+     * Given: User provides --source
+     * When: Migration command executes
+     * Then: DirectoryValidator.validateTargetDirectory is called BEFORE orchestrator.startMigration
+     */
+    it('should validate target directory before migration starts', async () => {
+      const sourcePath = '/my/source';
+      const targetPath = path.join(path.resolve(sourcePath), 'cdk');
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: targetPath,
+        isInPlace: true,
+        dryRun: false
+      });
+
+      const command = createMigrateCommand();
+
+      // Track call order
+      const callOrder: string[] = [];
+      mockValidateTargetDirectory.mockImplementation((dir) => {
+        callOrder.push('validate');
+        return { valid: true, canProceed: true };
+      });
+      mockStartMigration.mockImplementation(async () => {
+        callOrder.push('migrate');
+        return {
+          id: 'test-id',
+          status: 'COMPLETED',
+          startedAt: new Date(),
+          completedAt: new Date(),
+          config: { sourceDir: sourcePath, targetDir: targetPath, dryRun: false }
+        };
+      });
+
+      await command.parseAsync(['node', 'test', '--source', sourcePath]);
+
+      // Verify validation happened before migration
+      expect(callOrder).toEqual(['validate', 'migrate']);
+      expect(mockValidateTargetDirectory).toHaveBeenCalledWith(targetPath);
+    });
+
+    /**
+     * Test 6: Throw error if target directory validation fails
+     *
+     * Given: Target directory validation returns invalid
+     * When: Migration command executes
+     * Then: Error is thrown and migration does not start
+     */
+    it('should throw error if target directory is invalid', async () => {
+      const sourcePath = '/my/source';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+        isInPlace: true,
+        dryRun: false
+      });
+
+      mockValidateTargetDirectory.mockReturnValue({
+        valid: false,
+        canProceed: false,
+        error: 'Target directory already contains a CDK project'
+      });
+
+      const command = createMigrateCommand();
+
+      // Expect the command to throw process.exit error
+      await expect(
+        command.parseAsync(['node', 'test', '--source', sourcePath])
+      ).rejects.toThrow('process.exit called with code 1');
+
+      // Verify migration was NOT started
+      expect(mockStartMigration).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Test 7: Handle directory without write permissions
+     *
+     * Given: Target directory exists but no write permissions
+     * When: Migration command executes
+     * Then: Error is thrown with appropriate message
+     */
+    it('should throw error for directory without write permissions', async () => {
+      const sourcePath = '/my/source';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+        isInPlace: true,
+        dryRun: false
+      });
+
+      mockValidateTargetDirectory.mockReturnValue({
+        valid: false,
+        canProceed: false,
+        error: 'No write permissions for target directory'
+      });
+
+      const command = createMigrateCommand();
+
+      await expect(
+        command.parseAsync(['node', 'test', '--source', sourcePath])
+      ).rejects.toThrow('process.exit called with code 1');
+
+      expect(mockStartMigration).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Test 8: Allow non-existent target directory (will be created)
+     *
+     * Given: Target directory does not exist
+     * When: Migration command executes
+     * Then: Validation passes and migration proceeds
+     */
+    it('should allow non-existent target directory', async () => {
+      const sourcePath = '/my/source';
+      const targetPath = path.join(path.resolve(sourcePath), 'cdk');
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: targetPath,
+        isInPlace: true,
+        dryRun: false
+      });
+
+      mockValidateTargetDirectory.mockReturnValue({
+        valid: true,
+        canProceed: true,
+        created: true // Indicates directory was created
+      });
+
+      const command = createMigrateCommand();
+
+      await command.parseAsync(['node', 'test', '--source', sourcePath]);
+
+      expect(mockValidateTargetDirectory).toHaveBeenCalledWith(targetPath);
+      expect(mockStartMigration).toHaveBeenCalled();
+    });
+  });
+
+  describe('Gitignore Management', () => {
+    /**
+     * Test 9: Update .gitignore after successful migration
+     *
+     * Given: Migration completes successfully
+     * When: Migration status is COMPLETED
+     * Then: GitignoreManager.ensureCdkIgnored is called
+     */
+    it('should update .gitignore after successful migration', async () => {
+      const sourcePath = '/my/source';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+        isInPlace: true,
+        dryRun: false
+      });
+
+      // @ts-expect-error - Mock reassignment
+      mockStartMigration.mockResolvedValue({
+        id: 'test-id',
+        status: 'COMPLETED',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        config: {
+          sourceDir: path.resolve(sourcePath),
+          targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+          dryRun: false
+        }
+      } as any);
+
+      const command = createMigrateCommand();
+
+      await command.parseAsync(['node', 'test', '--source', sourcePath]);
+
+      // Verify .gitignore was updated after migration
+      expect(mockEnsureCdkIgnored).toHaveBeenCalledWith(path.resolve(sourcePath));
+    });
+
+    /**
+     * Test 10: Skip .gitignore update in dry-run mode
+     *
+     * Given: Migration runs in dry-run mode
+     * When: Migration completes
+     * Then: GitignoreManager.ensureCdkIgnored is NOT called
+     */
+    it('should skip .gitignore update in dry-run mode', async () => {
+      const sourcePath = '/my/source';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+        isInPlace: true,
+        dryRun: true
+      });
+
+      // @ts-expect-error - Mock reassignment
+      mockStartMigration.mockResolvedValue({
+        id: 'test-id',
+        status: 'COMPLETED',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        config: {
+          sourceDir: path.resolve(sourcePath),
+          targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+          dryRun: true
+        }
+      } as any);
+
+      const command = createMigrateCommand();
+
+      await command.parseAsync(['node', 'test', '--source', sourcePath, '--dry-run']);
+
+      // Verify .gitignore was NOT updated in dry-run mode
+      expect(mockEnsureCdkIgnored).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Test 11: Skip .gitignore update if migration failed
+     *
+     * Given: Migration fails
+     * When: Migration status is FAILED
+     * Then: GitignoreManager.ensureCdkIgnored is NOT called
+     */
+    it('should skip .gitignore update if migration failed', async () => {
+      const sourcePath = '/my/source';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+        isInPlace: true,
+        dryRun: false
+      });
+
+      // @ts-expect-error - Mock reassignment
+      mockStartMigration.mockResolvedValue({
+        id: 'test-id',
+        status: 'FAILED',
+        startedAt: new Date(),
+        error: new Error('Migration failed'),
+        config: {
+          sourceDir: path.resolve(sourcePath),
+          targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+          dryRun: false
+        }
+      } as any);
+
+      const command = createMigrateCommand();
+
+      await command.parseAsync(['node', 'test', '--source', sourcePath]);
+
+      // Verify .gitignore was NOT updated when migration failed
+      expect(mockEnsureCdkIgnored).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Test 12: Handle .gitignore update errors gracefully
+     *
+     * Given: Migration succeeds but .gitignore update fails
+     * When: GitignoreManager throws error
+     * Then: Error is logged but does not fail the migration
+     */
+    it('should handle .gitignore update errors gracefully', async () => {
+      const sourcePath = '/my/source';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+        isInPlace: true,
+        dryRun: false
+      });
+
+      // @ts-expect-error - Mock reassignment
+      mockStartMigration.mockResolvedValue({
+        id: 'test-id',
+        status: 'COMPLETED',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        config: {
+          sourceDir: path.resolve(sourcePath),
+          targetDir: path.join(path.resolve(sourcePath), 'cdk'),
+          dryRun: false
+        }
+      } as any);
+
+      mockEnsureCdkIgnored.mockReturnValue({
+        updated: false,
+        created: false,
+        alreadyExists: false,
+        error: 'Failed to update .gitignore'
+      });
+
+      const command = createMigrateCommand();
+
+      // Should not throw - .gitignore update failure is non-fatal
+      await expect(
+        command.parseAsync(['node', 'test', '--source', sourcePath])
+      ).resolves.not.toThrow();
+
+      expect(mockEnsureCdkIgnored).toHaveBeenCalled();
+    });
+  });
+
+  describe('Backward Compatibility', () => {
+    /**
+     * Test 13: Existing scripts with explicit target still work
+     *
+     * Given: Legacy script uses --source and --target
+     * When: Migration command executes
+     * Then: Works exactly as before
+     */
+    it('should maintain backward compatibility with explicit target', async () => {
+      const sourcePath = '/legacy/source';
+      const targetPath = '/legacy/target';
+
+      mockBuildConfig.mockReturnValue({
+        sourceDir: path.resolve(sourcePath),
+        targetDir: path.resolve(targetPath),
+        isInPlace: false,
+        dryRun: false
+      });
+
+      const command = createMigrateCommand();
+
+      // Legacy usage: sls-to-cdk migrate --source /legacy/source --target /legacy/target
+      await command.parseAsync(['node', 'test', '--source', sourcePath, '--target', targetPath]);
+
+      // Verify both source and target were passed to ConfigBuilder
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: sourcePath,
+          target: targetPath
+        })
+      );
+
+      // Verify migration used explicit target
+      expect(mockStartMigration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceDir: path.resolve(sourcePath),
+          targetDir: path.resolve(targetPath)
+        }),
+        expect.any(Object)
+      );
+    });
+
+    /**
+     * Test 14: Interactive mode integration works
+     *
+     * Given: No --source or --target provided
+     * When: Migration command executes
+     * Then: Falls through to interactive wizard (existing behavior)
+     */
+    it('should fall through to interactive mode when no source provided', async () => {
+      const command = createMigrateCommand();
+
+      // Mock the interactive wizard
+      (interactiveWizard as jest.MockedFunction<typeof interactiveWizard>).mockResolvedValue({
+        sourceDir: '/interactive/source',
+        targetDir: '/interactive/target',
+        stage: 'dev',
+        region: 'us-east-1',
+        stackName: 'my-stack',
+        dryRun: false,
+        backupEnabled: true,
+        cdkLanguage: 'typescript'
+      } as any);
+
+      await command.parseAsync(['node', 'test']);
+
+      // Verify interactive wizard was called
+      expect(interactiveWizard).toHaveBeenCalled();
+
+      // ConfigBuilder SHOULD be called in interactive mode (processes wizard results)
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: '/interactive/source',
+          target: '/interactive/target'
+        })
+      );
+    });
+
+    /**
+     * Test 15: Resume mode integration works
+     *
+     * Given: --resume flag provided
+     * When: Migration command executes
+     * Then: ConfigBuilder is NOT used (config loaded from state)
+     */
+    it('should skip ConfigBuilder when resuming migration', async () => {
+      // @ts-expect-error - Mock reassignment
+      mockGetProgress.mockResolvedValue({
+        state: {
+          id: 'resume-id',
+          status: 'IN_PROGRESS',
+          config: {
+            sourceDir: '/resumed/source',
+            targetDir: '/resumed/target',
+            stage: 'dev',
+            region: 'us-east-1',
+            dryRun: false
+          }
+        }
+      });
+
+      // @ts-expect-error - Mock reassignment
+      mockResumeMigration.mockResolvedValue({
+        id: 'resume-id',
+        status: 'COMPLETED',
+        startedAt: new Date(),
+        completedAt: new Date(),
+        config: {
+          sourceDir: '/resumed/source',
+          targetDir: '/resumed/target',
+          stage: 'dev',
+          region: 'us-east-1',
+          dryRun: false
+        }
+      } as any);
+
+      const command = createMigrateCommand();
+
+      await command.parseAsync(['node', 'test', '--resume', 'resume-id']);
+
+      // Verify ConfigBuilder was NOT called (config from saved state)
+      expect(mockBuildConfig).not.toHaveBeenCalled();
+
+      // Verify resume was called
+      expect(mockResumeMigration).toHaveBeenCalledWith('resume-id', expect.any(Object));
+    });
+  });
+
+  describe('Integration Flow', () => {
+    /**
+     * Test 16: Complete end-to-end flow for in-place mode
+     *
+     * Given: User provides only --source
+     * When: Migration executes
+     * Then: All utilities called in correct order
+     */
+    it('should execute complete flow in correct order for in-place mode', async () => {
+      const sourcePath = '/e2e/source';
+      const targetPath = path.join(path.resolve(sourcePath), 'cdk');
+      const callOrder: string[] = [];
+
+      mockBuildConfig.mockImplementation((opts) => {
+        callOrder.push('config-builder');
+        return {
+          sourceDir: path.resolve(sourcePath),
+          targetDir: targetPath,
+          isInPlace: true,
+          dryRun: false
+        };
+      });
+
+      mockValidateTargetDirectory.mockImplementation((dir) => {
+        callOrder.push('directory-validator');
+        return { valid: true, canProceed: true };
+      });
+
+      mockStartMigration.mockImplementation(async () => {
+        callOrder.push('orchestrator');
+        return {
+          id: 'e2e-id',
+          status: 'COMPLETED',
+          startedAt: new Date(),
+          completedAt: new Date(),
+          config: { sourceDir: path.resolve(sourcePath), targetDir: targetPath, dryRun: false }
+        };
+      });
+
+      mockEnsureCdkIgnored.mockImplementation(async () => {
+        callOrder.push('gitignore-manager');
+      });
+
+      const command = createMigrateCommand();
+
+      await command.parseAsync(['node', 'test', '--source', sourcePath]);
+
+      // Verify correct execution order
+      expect(callOrder).toEqual([
+        'config-builder',
+        'directory-validator',
+        'orchestrator',
+        'gitignore-manager'
+      ]);
+
+      // Verify all utilities were called with correct arguments
+      expect(mockBuildConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ source: sourcePath, target: undefined })
+      );
+      expect(mockValidateTargetDirectory).toHaveBeenCalledWith(targetPath);
+      expect(mockStartMigration).toHaveBeenCalled();
+      expect(mockEnsureCdkIgnored).toHaveBeenCalledWith(path.resolve(sourcePath));
+    });
+
+    /**
+     * Test 17: Verify utilities NOT called for config file mode
+     *
+     * Given: User provides --config flag
+     * When: Migration executes
+     * Then: ConfigBuilder NOT called (config from file)
+     */
+    it('should skip ConfigBuilder when using config file', async () => {
+      // Mock config file loading
+      const mockLoadConfig = (jest.fn() as any).mockResolvedValue({
+        sourceDir: '/config/source',
+        targetDir: '/config/target',
+        stage: 'prod',
+        region: 'us-west-2',
+        dryRun: false
+      });
+
+      // This test verifies ConfigBuilder is NOT called for config file mode
+      const command = createMigrateCommand();
+
+      // Note: This will fail until loadConfigFromFile is implemented
+      // For now, we expect it to throw process.exit error
+      await expect(
+        command.parseAsync(['node', 'test', '--config', '/path/to/config.json'])
+      ).rejects.toThrow('process.exit called with code 1');
+
+      // ConfigBuilder should NOT be called
+      expect(mockBuildConfig).not.toHaveBeenCalled();
+    });
+  });
+});
