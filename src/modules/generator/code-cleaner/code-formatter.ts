@@ -234,15 +234,21 @@ export class CodeFormatter {
       return code;
     }
 
-    // Separate core imports from service imports
+    // Separate imports into categories
+    const constructImports = imports.filter(imp => imp.includes("from 'constructs'"));
     const coreImports = imports.filter(imp => imp.includes("'aws-cdk-lib'") && !imp.includes('/'));
     const serviceImports = imports.filter(imp => imp.includes('/aws-'));
+    const otherImports = imports.filter(imp =>
+      !imp.includes("from 'constructs'") &&
+      !imp.includes("'aws-cdk-lib'") &&
+      !imp.includes('/aws-')
+    );
 
     // Sort service imports alphabetically
     serviceImports.sort();
 
-    // Combine: core imports first, then service imports
-    const organizedImports = [...coreImports, ...serviceImports];
+    // Combine: constructs first, then core imports, then service imports, then others
+    const organizedImports = [...constructImports, ...coreImports, ...serviceImports, ...otherImports];
 
     return [...organizedImports, '', ...nonImports].join('\n');
   }
