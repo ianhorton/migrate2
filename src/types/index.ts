@@ -18,6 +18,7 @@ export enum MigrationStep {
 export enum MigrationStatus {
   PENDING = 'PENDING',
   IN_PROGRESS = 'IN_PROGRESS',
+  PAUSED = 'PAUSED',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
   ROLLED_BACK = 'ROLLED_BACK'
@@ -221,3 +222,6 @@ export interface OrchestratorOptions {
   onProgress?: (step: MigrationStep, progress: number) => void;
   onStepComplete?: (result: StepResult) => void;
 }
+
+// Re-export checkpoint types
+export * from './checkpoint';

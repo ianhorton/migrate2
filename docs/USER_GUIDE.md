@@ -15,10 +15,14 @@
 
 ## Overview
 
-The Serverless-to-CDK Migration Tool automates the migration of AWS applications from Serverless Framework to AWS CDK, eliminating manual template comparison and error-prone editing steps.
+The Serverless-to-CDK Migration Tool automates the migration of AWS applications from Serverless Framework to AWS CDK, eliminating manual template comparison and error-prone editing steps. **Version 2.0.0** adds comprehensive support for "messy" real-world environments.
 
 ### Key Features
 
+✅ **Messy Environment Support** ⭐ NEW - Handles real-world complexity with human intervention
+✅ **Physical ID Resolution** - Smart matching with 90%+ accuracy and confidence scoring
+✅ **Drift Detection** - Detects and resolves manual CloudFormation modifications
+✅ **Interactive Checkpoints** - Pauses at critical decision points for human review
 ✅ **Automated Resource Discovery** - Discovers all resources including abstracted ones (60-80% typically hidden)
 ✅ **Intelligent Template Comparison** - Compares CloudFormation templates with severity classification
 ✅ **Safe Migration** - Automatic backups, validation gates, and rollback capability
@@ -418,6 +422,289 @@ sls-to-cdk rollback <migration-id> --to INITIAL_SCAN
 
 ---
 
+## Messy Environment Support ⭐ NEW
+
+Version 2.0.0 adds robust support for real-world "messy" migration scenarios.
+
+### What is a "Messy Environment"?
+
+Real-world environments often have:
+- Physical resource names that don't match logical IDs
+- Resources manually modified outside CloudFormation (drift)
+- Multiple stacks sharing resources
+- Template inconsistencies
+- Missing or incorrect tags
+
+### Key Features
+
+#### 1. Physical ID Resolution
+
+**Problem**: CloudFormation logical IDs don't always match physical resource names.
+
+**Solution**: Intelligent matching with confidence scoring.
+
+**Example**:
+```bash
+⚠️  Physical ID Resolution Required
+
+Logical ID: UsersTable
+Type: AWS::DynamoDB::Table
+
+Found 3 candidates:
+
+❯ ✨ users-table-prod (95% confidence) [RECOMMENDED]
+  📍 us-east-1 | Created: 2024-01-15
+  Tags: Environment=prod, App=myapp
+
+  users-table-staging (60% confidence)
+  📍 us-east-1 | Created: 2023-06-10
+
+  ✏️  Enter manually
+  ⏭️  Skip this resource
+
+Choose resource: [Use arrow keys]
+```
+
+**Confidence Factors**:
+- Exact name match: +90%
+- Name similarity: +0-50%
+- Tag matching: +20%
+- Configuration match: +30%
+- Recent creation: +10%
+
+#### 2. Confidence Scoring
+
+Every migration decision has a confidence score:
+
+| Score | Indicator | Action |
+|-------|-----------|--------|
+| 95-100% | ✅ Green | Auto-proceed |
+| 70-94% | ⚠️ Yellow | Review recommended |
+| 0-69% | 🔴 Red | Human required |
+
+**View confidence scores**:
+```bash
+# In migration output
+[Step 2/9] Physical ID Resolution
+  ✅ UsersTable (95% confidence) → users-table-prod
+  ⚠️  SessionsTable (78% confidence) → sessions-table-prod
+  🔴 ApiRole (45% confidence) → HUMAN REQUIRED
+```
+
+#### 3. Drift Detection
+
+**Problem**: Resources modified manually outside CloudFormation.
+
+**Solution**: Detect and resolve drift interactively.
+
+**Example**:
+```bash
+🔍 Detecting CloudFormation drift...
+
+⚠️  Drift detected in 2 resources:
+
+Resource: ApiLambdaRole (IAM Role)
+Status: MODIFIED
+
+Differences:
+  • Added policy: AWSLambdaVPCAccessExecutionRole
+  • Changed MaxSessionDuration: 3600 → 7200
+
+Resolve drift:
+❯ Use AWS state (keep manual changes)
+  Use template state (revert to template)
+  Pause for manual review
+  Abort migration
+
+Choose resolution: [Use arrow keys]
+```
+
+**Drift Resolution Options**:
+- **Use AWS state**: Keep manual changes, update CDK to match
+- **Use template state**: Revert to template configuration
+- **Manual review**: Pause for manual inspection
+- **Abort**: Stop migration
+
+#### 4. Interactive Checkpoints
+
+Migration pauses at critical decision points:
+
+**Checkpoint 1: Physical ID Resolution**
+- Triggered: When stateful resources need ID resolution
+- Action: Select or confirm physical IDs
+
+**Checkpoint 2: Critical Differences Review**
+- Triggered: When critical template differences found
+- Action: Review comparison report, decide how to proceed
+
+**Checkpoint 3: Drift Detection**
+- Triggered: When CloudFormation drift detected
+- Action: Choose drift resolution strategy
+
+**Checkpoint 4: CDK Import Execution**
+- Triggered: Before importing resources into CDK
+- Action: Review import plan, monitor process
+
+**Example**:
+```bash
+🛑 Checkpoint: Critical Differences Review
+
+Found 2 critical differences that may cause import failure:
+
+1. UsersTable - AttributeDefinitions mismatch
+   Serverless: [userId: S, email: S]
+   CDK: [userId: S]
+
+   Impact: Import will fail if GSI references missing attribute
+
+2. ApiGateway - StageName mismatch
+   Serverless: "prod"
+   CDK: "production"
+
+   Impact: Will create new stage instead of importing existing
+
+Options:
+  1. Continue anyway (may fail)
+  2. Pause for manual fix
+  3. Abort migration
+
+Choose option [2]: _
+```
+
+#### 5. Human Intervention Prompts
+
+Interactive prompts with full context:
+
+**Types of Prompts**:
+- **Choice**: Select from multiple options
+- **Confirm**: Yes/No decision
+- **Input**: Enter value manually
+
+**Example Prompts**:
+
+```bash
+# Prompt Type: Choice
+❓ Multiple IAM roles found matching "ApiRole"
+
+Which role should be imported?
+
+  1. api-lambda-role-prod (Created: 2024-01-15)
+     Policies: AWSLambdaBasicExecutionRole, CustomApiPolicy
+
+  2. legacy-api-role (Created: 2023-06-10)
+     Policies: AWSLambdaBasicExecutionRole
+
+  3. Enter ARN manually
+  4. Skip this resource
+
+Select option [1-4]: _
+```
+
+```bash
+# Prompt Type: Confirm
+⚠️  WARNING: Proceeding will remove 5 resources from Serverless stack
+
+Resources to be removed:
+  • UsersTable (DynamoDB)
+  • SessionsTable (DynamoDB)
+  • ApiLambdaRole (IAM)
+  • LogsBucket (S3)
+  • ApiGateway (API Gateway)
+
+These resources will be orphaned (exist in AWS but not in any stack)
+until imported into CDK stack.
+
+Continue? [y/N]: _
+```
+
+#### 6. Manual Review Reports
+
+Comprehensive reports for human review:
+
+**HTML Report** (`.migration-state/comparison-report.html`):
+- Interactive web interface
+- Side-by-side comparison
+- Confidence score visualization
+- Resource dependency graph
+
+**Terminal Summary**:
+```bash
+📊 Manual Review Required
+
+Summary:
+  Total Resources: 15
+  Auto-Resolvable: 10 (67%)
+  Requires Review: 5 (33%)
+  Overall Confidence: 78%
+
+Resources Requiring Review:
+
+1. UsersTable (DynamoDB) - Confidence: 65%
+   ⚠️  Critical: AttributeDefinitions differ
+   ⚠️  Warning: BillingMode differs
+
+   Recommendations:
+   • Verify GSI attribute definitions in CDK code
+   • Review billing mode change impact
+
+2. ApiRole (IAM) - Confidence: 45%
+   🔴 Human Required: Multiple candidates found
+
+   Candidates:
+   • api-lambda-role-prod (60% match)
+   • legacy-api-role (40% match)
+```
+
+### Configuration
+
+Enable messy environment features in `.sls-to-cdk.json`:
+
+```json
+{
+  "messyEnvironment": {
+    "enabled": true,
+    "confidenceThreshold": 0.9,
+    "autoResolveAbove": 0.95,
+    "requireHumanReviewBelow": 0.7,
+    "detectDrift": true,
+    "interactiveCheckpoints": true
+  }
+}
+```
+
+### Best Practices
+
+1. **Always enable drift detection** in production
+2. **Use dry-run first** to preview decisions
+3. **Review confidence scores** - investigate low scores
+4. **Save intervention history** for audit trail
+5. **Test in non-production first** with messy environment features
+
+### Troubleshooting
+
+**Issue**: "Low confidence scores for all resources"
+
+**Solution**:
+- Add tags to AWS resources for better matching
+- Use explicit physical IDs in template
+- Lower confidence threshold if appropriate
+
+**Issue**: "Too many human intervention prompts"
+
+**Solution**:
+- Increase `autoResolveAbove` threshold
+- Pre-configure responses in non-interactive mode
+- Fix naming inconsistencies in AWS
+
+**Issue**: "Drift detection takes too long"
+
+**Solution**:
+- Disable drift detection: `"detectDrift": false`
+- Run drift detection separately before migration
+- Limit to specific resources
+
+---
+
 ## Next Steps
 
 After successful migration:
@@ -452,5 +739,5 @@ After successful migration:
 
 ---
 
-*Tool Version: 1.0.0*
-*Last Updated: 2025-01-20*
+*Tool Version: 2.0.0*
+*Last Updated: 2025-01-23*

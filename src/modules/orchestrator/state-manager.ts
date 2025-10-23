@@ -6,17 +6,20 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { MigrationState, MigrationStatus, MigrationStep, StepResult, MigrationConfig } from '../../types';
+import { CheckpointExecution } from '../../types/checkpoint';
 import { MigrationStateMachine } from './state-machine';
 
 export class StateManager {
   private readonly stateDir: string;
   private readonly stateFile: string;
   private readonly backupDir: string;
+  private readonly checkpointDir: string;
 
   constructor(workingDir: string = process.cwd()) {
     this.stateDir = path.join(workingDir, '.migration-state');
     this.stateFile = path.join(this.stateDir, 'state.json');
     this.backupDir = path.join(this.stateDir, 'backups');
+    this.checkpointDir = path.join(this.stateDir, 'checkpoints');
   }
 
   /**
@@ -272,5 +275,120 @@ export class StateManager {
 
   private generateStateId(): string {
     return `migration-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Save paused state with checkpoint information
+   */
+  public async savePausedState(
+    state: MigrationState,
+    checkpointId: string
+  ): Promise<string> {
+    await this.ensureCheckpointDirectory();
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const checkpointFile = path.join(
+      this.checkpointDir,
+      `checkpoint-${state.id}-${checkpointId}-${timestamp}.json`
+    );
+
+    const checkpointData = {
+      state,
+      checkpointId,
+      pausedAt: new Date(),
+      resumable: true
+    };
+
+    await fs.writeFile(
+      checkpointFile,
+      JSON.stringify(checkpointData, null, 2),
+      'utf-8'
+    );
+
+    return checkpointFile;
+  }
+
+  /**
+   * Load paused state from checkpoint
+   */
+  public async loadPausedState(checkpointFile: string): Promise<MigrationState> {
+    try {
+      const content = await fs.readFile(checkpointFile, 'utf-8');
+      const checkpointData = JSON.parse(content);
+
+      // Convert date strings back to Date objects
+      const state = checkpointData.state as MigrationState;
+      state.startedAt = new Date(state.startedAt);
+      state.updatedAt = new Date(state.updatedAt);
+      if (state.completedAt) {
+        state.completedAt = new Date(state.completedAt);
+      }
+
+      return state;
+    } catch (error) {
+      throw new Error(`Failed to load paused state from ${checkpointFile}: ${error}`);
+    }
+  }
+
+  /**
+   * List all checkpoint files for a migration
+   */
+  public async listCheckpoints(stateId?: string): Promise<string[]> {
+    await this.ensureCheckpointDirectory();
+
+    try {
+      const files = await fs.readdir(this.checkpointDir);
+      let checkpoints = files.filter(f => f.startsWith('checkpoint-') && f.endsWith('.json'));
+
+      if (stateId) {
+        checkpoints = checkpoints.filter(f => f.includes(stateId));
+      }
+
+      return checkpoints.map(f => path.join(this.checkpointDir, f));
+    } catch (error) {
+      return [];
+    }
+  }
+
+  /**
+   * Save checkpoint execution history
+   */
+  public async saveCheckpointHistory(
+    stateId: string,
+    executions: CheckpointExecution[]
+  ): Promise<void> {
+    await this.ensureCheckpointDirectory();
+
+    const historyFile = path.join(
+      this.checkpointDir,
+      `history-${stateId}.json`
+    );
+
+    await fs.writeFile(
+      historyFile,
+      JSON.stringify(executions, null, 2),
+      'utf-8'
+    );
+  }
+
+  /**
+   * Load checkpoint execution history
+   */
+  public async loadCheckpointHistory(stateId: string): Promise<CheckpointExecution[]> {
+    const historyFile = path.join(
+      this.checkpointDir,
+      `history-${stateId}.json`
+    );
+
+    try {
+      const content = await fs.readFile(historyFile, 'utf-8');
+      return JSON.parse(content);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  private async ensureCheckpointDirectory(): Promise<void> {
+    await fs.mkdir(this.checkpointDir, { recursive: true });
   }
 }

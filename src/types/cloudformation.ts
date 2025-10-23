@@ -71,6 +71,10 @@ export interface ComparisonReport {
   overall_status: 'MATCH' | 'ACCEPTABLE' | 'WARNING' | 'CRITICAL';
   ready_for_import: boolean;
   blocking_issues: string[];
+  // Sprint 2 additions
+  classifications?: any[]; // DifferenceClassification[]
+  confidence_scores?: Map<string, any>; // Map<string, ConfidenceScore>
+  overall_confidence?: any; // ConfidenceScore
 }
 
 export interface ValidationResult {

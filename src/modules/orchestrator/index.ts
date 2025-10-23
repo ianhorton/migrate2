@@ -14,15 +14,18 @@ import {
 import { MigrationStateMachine } from './state-machine';
 import { StateManager } from './state-manager';
 import { StepExecutorFactory } from './step-executor';
+import { CheckpointManager } from './checkpoints';
 import { Logger } from '../../utils/logger';
 
 export class MigrationOrchestrator {
   private stateManager: StateManager;
+  private checkpointManager: CheckpointManager;
   private logger: Logger;
   private executorsInitialized: boolean = false;
 
   constructor(workingDir?: string) {
     this.stateManager = new StateManager(workingDir);
+    this.checkpointManager = new CheckpointManager();
     this.logger = new Logger('MigrationOrchestrator');
   }
 
@@ -145,7 +148,7 @@ export class MigrationOrchestrator {
   }
 
   /**
-   * Execute migration steps
+   * Execute migration steps with checkpoint support
    */
   private async executeMigration(
     state: MigrationState,
@@ -174,6 +177,46 @@ export class MigrationOrchestrator {
         state.completedAt = new Date();
         await this.stateManager.saveState(state);
         break;
+      }
+
+      // Check for checkpoints BEFORE executing step
+      const checkpoint = await this.checkpointManager.shouldTrigger(state, step);
+
+      if (checkpoint) {
+        this.logger.info(`Checkpoint triggered: ${checkpoint.name}`);
+        console.log(`\n🛑 Checkpoint: ${checkpoint.name}\n`);
+        console.log(`   ${checkpoint.description}\n`);
+
+        const checkpointResult = await this.checkpointManager.executeCheckpoint(
+          checkpoint,
+          state
+        );
+
+        if (checkpointResult.action === 'pause') {
+          this.logger.info('Migration paused at checkpoint');
+          console.log(`\n⏸️  Migration paused: ${checkpointResult.message || 'User requested pause'}`);
+
+          state.status = MigrationStatus.PAUSED;
+          await this.stateManager.saveState(state);
+          return state;
+        }
+
+        if (checkpointResult.action === 'abort') {
+          this.logger.warn('Migration aborted at checkpoint');
+          console.log(`\n🛑 Migration aborted: ${checkpointResult.message || 'User requested abort'}`);
+
+          state.status = MigrationStatus.FAILED;
+          state.error = new Error(checkpointResult.message || 'Aborted by checkpoint');
+          await this.stateManager.saveState(state);
+          return state;
+        }
+
+        // Apply modifications from checkpoint
+        if (checkpointResult.modifications) {
+          this.logger.info('Applying checkpoint modifications', checkpointResult.modifications);
+          state = { ...state, ...checkpointResult.modifications };
+          await this.stateManager.saveState(state);
+        }
       }
 
       // Execute step
@@ -254,3 +297,4 @@ export class MigrationOrchestrator {
 export { MigrationStateMachine } from './state-machine';
 export { StateManager } from './state-manager';
 export { StepExecutorFactory, BaseStepExecutor } from './step-executor';
+export { CheckpointManager } from './checkpoints';

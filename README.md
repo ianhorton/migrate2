@@ -15,9 +15,13 @@ Automates the migration of AWS applications from Serverless Framework to AWS CDK
 
 ### Key Features
 
-✅ **In-Place Migration** ⭐ NEW - Creates CDK project inside Serverless project at `<source>/cdk`
+✅ **In-Place Migration** ⭐ - Creates CDK project inside Serverless project at `<source>/cdk`
+✅ **Messy Environment Support** ⭐ NEW - Handles real-world complexity with human intervention
 ✅ **Automated Resource Discovery** - Finds all resources including 60-80% that are abstracted
+✅ **Intelligent Physical ID Resolution** - Smart matching with confidence scoring
 ✅ **Intelligent Template Comparison** - Compares CloudFormation templates with severity classification
+✅ **Drift Detection & Resolution** - Detects and handles CloudFormation drift gracefully
+✅ **Interactive Checkpoints** - Pauses at critical decision points for human review
 ✅ **Safe Migration** - Automatic backups, validation gates, and rollback capability
 ✅ **CDK Code Generation** - Generates production-ready TypeScript CDK code
 ✅ **Smart Gitignore Management** - Automatically adds `/cdk/` to .gitignore
@@ -110,30 +114,42 @@ sls-to-cdk migrate --source ./serverless-app --dry-run
 
 ## ✨ Features
 
+### Messy Environment Support ⭐ NEW
+
+- **Physical ID Resolution**: Smart matching of logical IDs to physical resources with 90%+ accuracy
+- **Confidence Scoring**: AI-powered confidence scores for migration decisions
+- **AWS Resource Discovery**: Scans AWS account to find actual resources (DynamoDB, S3, Lambda, IAM, etc.)
+- **Drift Detection**: Detects and resolves manual CloudFormation modifications
+- **Human Intervention**: Interactive prompts at critical decision points with context
+- **Checkpoint System**: Pauses migration for review at critical steps
+- **Manual Review Reports**: Comprehensive HTML and terminal reports for human review
+- **Multiple Candidate Handling**: Presents options when multiple physical IDs match
+
 ### Automation
 
 - **Resource Discovery**: Automatically discovers all resources including abstracted ones (LogGroups, IAM roles, etc.)
 - **Template Comparison**: Eliminates manual CloudFormation template comparison
 - **CloudFormation Editing**: Safely modifies templates with dependency updates
 - **CDK Code Generation**: Generates complete CDK project with proper structure
-- **Stack Orchestration**: 9 automated migration steps
+- **Stack Orchestration**: 9 automated migration steps with interactive checkpoints
 
 ### Safety
 
 - **Automatic Backups**: Creates backups before all destructive operations
 - **Validation Gates**: Checks prerequisites before each critical step
-- **Drift Detection**: Verifies resources after migration
+- **Drift Detection**: Verifies resources after migration and handles drift gracefully
 - **Rollback**: Rollback to any previous step
 - **Dry-Run Mode**: Preview all changes without executing them
+- **Audit Trail**: Records all human interventions for compliance
 
 ### User Experience
 
 - **Interactive Wizard**: Step-by-step guidance with smart defaults
 - **Progress Tracking**: Real-time progress bars and status indicators
-- **Color-Coded Output**: Easy-to-read terminal output
-- **HTML Reports**: Interactive comparison reports
-- **Resume Capability**: Continue interrupted migrations
-- **Detailed Errors**: Comprehensive error messages with context
+- **Color-Coded Output**: Easy-to-read terminal output with confidence indicators
+- **HTML Reports**: Interactive comparison reports with confidence scores
+- **Resume Capability**: Continue interrupted migrations from checkpoints
+- **Detailed Errors**: Comprehensive error messages with context and recommendations
 
 ---
 
@@ -177,8 +193,10 @@ The tool consists of 7 core modules:
 ## 📚 Documentation
 
 ### User Guides
-- [**User Guide**](docs/USER_GUIDE.md) - Complete user documentation
+- [**Production Deployment Guide**](docs/PRODUCTION_DEPLOYMENT_GUIDE.md) - Production deployment instructions ⭐ NEW
+- [**User Guide**](docs/USER_GUIDE.md) - Complete user documentation with messy environment support
 - [**Project Summary**](docs/PROJECT_SUMMARY.md) - Implementation overview
+- [**Changelog**](CHANGELOG.md) - Version history and release notes ⭐ NEW
 - [**Troubleshooting**](docs/USER_GUIDE.md#troubleshooting) - Common issues
 
 ### Architecture
@@ -305,6 +323,6 @@ Powered by [Claude Code](https://claude.com/claude-code)
 
 ---
 
-*Version: 1.0.0*
-*Status: ✅ Production Ready*
-*Last Updated: 2025-01-20*
+*Version: 2.0.0*
+*Status: ✅ Production Ready - Messy Environment Support*
+*Last Updated: 2025-01-23*

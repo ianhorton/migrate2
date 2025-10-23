@@ -1,0 +1,104 @@
+# Messy Serverless Environment - Test Fixture
+# This fixture simulates a real-world scenario with:
+# - Physical names that don't match logical IDs
+# - Resources that have been manually modified
+# - Multiple similar resource names
+
+service: messy-app
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+
+functions:
+  api:
+    handler: handler.main
+    name: ${self:service}-${self:provider.stage}-api-function
+    role: ApiLambdaRole
+    events:
+      - httpApi:
+          path: /api
+          method: get
+
+resources:
+  Resources:
+    # DynamoDB Tables with naming conflicts
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: users-table-${self:provider.stage}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: EmailIndex
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: orders-table-${self:provider.stage}
+        BillingMode: PROVISIONED
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+        AttributeDefinitions:
+          - AttributeName: orderId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: orderId
+            KeyType: HASH
+
+    # S3 Bucket
+    DataBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:service}-data-${self:provider.stage}
+        VersioningConfiguration:
+          Status: Enabled
+
+    # IAM Role that has been manually modified in AWS
+    ApiLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        RoleName: ${self:service}-api-role-${self:provider.stage}
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: lambda.amazonaws.com
+              Action: sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        Policies:
+          - PolicyName: DynamoDBAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - dynamodb:GetItem
+                    - dynamodb:PutItem
+                  Resource:
+                    - !GetAtt UsersTable.Arn
+                    - !GetAtt OrdersTable.Arn
+
+    # Log Group
+    ApiLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-api-function
+        RetentionInDays: 14

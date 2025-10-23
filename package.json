@@ -1,7 +1,7 @@
 {
   "name": "sls-to-cdk-migrator",
-  "version": "1.0.0",
-  "description": "Automated Serverless Framework to AWS CDK migration tool",
+  "version": "2.0.0",
+  "description": "Automated Serverless Framework to AWS CDK migration tool with messy environment support",
   "main": "dist/index.js",
   "bin": {
     "sls-to-cdk": "./dist/cli/index.js"
@@ -33,7 +33,12 @@
     "cdk",
     "migration",
     "aws",
-    "cloudformation"
+    "cloudformation",
+    "drift-detection",
+    "physical-id-resolution",
+    "confidence-scoring",
+    "human-intervention",
+    "checkpoint-system"
   ],
   "author": "",
   "license": "MIT",
@@ -41,6 +46,8 @@
     "@aws-sdk/client-cloudformation": "^3.913.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.913.0",
     "@aws-sdk/client-dynamodb": "^3.913.0",
+    "@aws-sdk/client-iam": "^3.915.0",
+    "@aws-sdk/client-lambda": "^3.914.0",
     "@aws-sdk/client-s3": "^3.913.0",
     "@aws-sdk/credential-provider-node": "^3.913.0",
     "@aws-sdk/credential-providers": "^3.913.0",

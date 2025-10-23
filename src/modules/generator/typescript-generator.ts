@@ -4,8 +4,10 @@
  * Generates TypeScript CDK code for CloudFormation resources
  */
 
-import { Resource } from '../../types';
+import { Resource, ClassifiedResource } from '../../types';
 import { ConstructCode } from './index';
+import { IAMRoleGenerator } from './templates/l2-constructs/iam';
+import { AdvancedConstructsGenerator } from './templates/l2-constructs/advanced';
 
 /**
  * Construct definition for CDK resources
@@ -36,6 +38,9 @@ type PropertyTransformer = (
  * TypeScript code generator
  */
 export class TypeScriptGenerator {
+  private allResources: ClassifiedResource[] = [];
+  private iamRoleGenerator?: IAMRoleGenerator;
+  private advancedConstructsGenerator?: AdvancedConstructsGenerator;
   /**
    * Mapping from CloudFormation resource types to CDK constructs
    */
@@ -89,14 +94,48 @@ export class TypeScriptGenerator {
   private resourceRefs: Map<string, string> = new Map();
 
   /**
+   * Initialize with classified resources for advanced generation
+   */
+  public initializeWithResources(classifiedResources: ClassifiedResource[], config?: any): void {
+    this.allResources = classifiedResources;
+    this.iamRoleGenerator = new IAMRoleGenerator(classifiedResources);
+    this.advancedConstructsGenerator = new AdvancedConstructsGenerator(classifiedResources, config);
+  }
+
+  /**
    * Generate construct code for a resource
    */
-  generateConstruct(resource: Resource, useL2: boolean = true): ConstructCode {
-    const definition = this.CONSTRUCT_MAPPING[resource.type];
+  generateConstruct(resource: Resource | ClassifiedResource, useL2: boolean = true): ConstructCode {
+    const classifiedResource = resource as ClassifiedResource;
+
+    // Normalize access to properties (handle both Resource and ClassifiedResource)
+    const resourceType = classifiedResource.Type || (resource as Resource).type;
+    const resourceProperties = classifiedResource.Properties || (resource as Resource).properties;
+    const logicalId = classifiedResource.LogicalId || (resource as Resource).logicalId;
+
+    // Use specialized IAM generator if available
+    if (resourceType === 'AWS::IAM::Role' && this.iamRoleGenerator && classifiedResource.LogicalId) {
+      console.log(`🔐 Using IAMRoleGenerator for ${classifiedResource.LogicalId}`);
+      const code = this.iamRoleGenerator.generateRole(classifiedResource);
+      const varName = this.toCamelCase(classifiedResource.LogicalId);
+
+      // Store resource reference for cross-references
+      this.resourceRefs.set(classifiedResource.LogicalId, varName);
+
+      return {
+        name: varName,
+        resourceType: resourceType,
+        code,
+        comments: this.generateComments(classifiedResource),
+        dependencies: this.extractDependencies(resourceProperties),
+      };
+    }
+
+    const definition = this.CONSTRUCT_MAPPING[resourceType];
 
     if (!definition) {
       throw new Error(
-        `Unsupported resource type: ${resource.type}. Only L1 constructs will be generated.`
+        `Unsupported resource type: ${resourceType}. Only L1 constructs will be generated.`
       );
     }
 
@@ -105,45 +144,77 @@ export class TypeScriptGenerator {
       ? definition.l2Class
       : definition.l1Class;
 
-    const varName = this.toCamelCase(resource.logicalId);
+    const varName = this.toCamelCase(logicalId);
 
     // Store resource reference for cross-references
-    this.resourceRefs.set(resource.logicalId, varName);
+    this.resourceRefs.set(logicalId, varName);
 
     // Transform properties if using L2 and transformer exists
-    let transformedProps = resource.properties;
-    if (useL2 && this.PROPERTY_TRANSFORMERS[resource.type]) {
-      transformedProps = this.PROPERTY_TRANSFORMERS[resource.type](
-        resource.properties,
+    let transformedProps = resourceProperties;
+    if (useL2 && this.PROPERTY_TRANSFORMERS[resourceType]) {
+      transformedProps = this.PROPERTY_TRANSFORMERS[resourceType](
+        resourceProperties,
         this.resourceRefs
       );
     }
 
     const properties = this.convertProperties(
       transformedProps,
-      resource.type,
+      resourceType,
       useL2
     );
 
-    // Generate the construct code
-    const code = this.renderConstruct(
+    // Generate the construct code with conditional flags
+    let code = this.renderConstruct(
       varName,
       constructClass,
-      resource.logicalId,
+      logicalId,
       properties,
-      definition.module
+      definition.module,
+      classifiedResource
     );
+
+    // Add advanced constructs for Lambda functions
+    if (resourceType === 'AWS::Lambda::Function' && this.advancedConstructsGenerator && classifiedResource.LogicalId) {
+      const advancedResult = this.advancedConstructsGenerator.generateAdvancedConstructs(
+        classifiedResource,
+        varName
+      );
+      if (advancedResult.code) {
+        code += '\n\n' + advancedResult.code;
+      }
+      // Console suggestions will be handled by the caller
+    }
 
     return {
       name: varName,
-      resourceType: resource.type,
+      resourceType: resourceType,
       code,
-      comments: [
-        `${resource.type}: ${this.getPhysicalId(resource)}`,
-        'IMPORTANT: This resource will be imported, not created',
-      ],
-      dependencies: this.extractDependencies(resource.properties),
+      comments: this.generateComments(classifiedResource),
+      dependencies: this.extractDependencies(resourceProperties),
     };
+  }
+
+  /**
+   * Generate comments based on classification flags
+   */
+  private generateComments(resource: ClassifiedResource | Resource): string[] {
+    const classified = resource as ClassifiedResource;
+
+    // If suppressComments is true or this is not a classified resource, return empty
+    if (classified.suppressComments || !classified.LogicalId) {
+      return [];
+    }
+
+    // Only add comments for imported resources
+    if (classified.needsImport) {
+      return [
+        `${classified.Type}: ${this.getPhysicalId(classified)}`,
+        'IMPORTANT: This resource will be imported, not created',
+      ];
+    }
+
+    return [];
   }
 
   /**
@@ -358,21 +429,39 @@ export class TypeScriptGenerator {
   }
 
   /**
-   * Render construct code
+   * Render construct code with conditional flags
    */
   private renderConstruct(
     varName: string,
     constructClass: string,
     logicalId: string,
     properties: string,
-    module: string
+    module: string,
+    resource?: ClassifiedResource
   ): string {
-    return `    const ${varName} = new ${module}.${constructClass}(this, '${logicalId}', {
+    let code = `    const ${varName} = new ${module}.${constructClass}(this, '${logicalId}', {
 ${properties}
-    });
-    ${varName}.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);
-    // Preserve exact CloudFormation logical ID for resource import
-    (${varName}.node.defaultChild as cdk.CfnResource).overrideLogicalId('${logicalId}');`;
+    });`;
+
+    // Only add removal policy for stateful resources
+    if (resource && !resource.suppressRemovalPolicy && resource.isStateful) {
+      code += `\n    ${varName}.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);`;
+    } else if (!resource) {
+      // Backward compatibility: if no ClassifiedResource, add RETAIN (old behavior)
+      code += `\n    ${varName}.applyRemovalPolicy(cdk.RemovalPolicy.RETAIN);`;
+    }
+
+    // Only add logical ID override for imported resources
+    if (resource && !resource.suppressLogicalIdOverride && resource.needsImport) {
+      code += `\n    // Preserve exact CloudFormation logical ID for resource import`;
+      code += `\n    (${varName}.node.defaultChild as cdk.CfnResource).overrideLogicalId('${logicalId}');`;
+    } else if (!resource) {
+      // Backward compatibility: if no ClassifiedResource, add override (old behavior)
+      code += `\n    // Preserve exact CloudFormation logical ID for resource import`;
+      code += `\n    (${varName}.node.defaultChild as cdk.CfnResource).overrideLogicalId('${logicalId}');`;
+    }
+
+    return code;
   }
 
   /**
@@ -386,7 +475,7 @@ ${properties}
   /**
    * Get physical ID from resource properties
    */
-  private getPhysicalId(resource: Resource): string {
+  private getPhysicalId(resource: Resource | ClassifiedResource): string {
     const physicalIdProps: Record<string, string> = {
       'AWS::DynamoDB::Table': 'TableName',
       'AWS::S3::Bucket': 'BucketName',
@@ -395,12 +484,18 @@ ${properties}
       'AWS::IAM::Role': 'RoleName',
     };
 
-    const prop = physicalIdProps[resource.type];
-    if (prop && resource.properties[prop]) {
-      return resource.properties[prop] as string;
+    const classified = resource as ClassifiedResource;
+    const basic = resource as Resource;
+    const resourceType = classified.Type || basic.type;
+    const properties = classified.Properties || basic.properties;
+    const logicalId = classified.LogicalId || basic.logicalId;
+
+    const prop = physicalIdProps[resourceType];
+    if (prop && properties && properties[prop]) {
+      return properties[prop] as string;
     }
 
-    return resource.logicalId;
+    return logicalId;
   }
 
   /**

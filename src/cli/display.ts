@@ -117,6 +117,7 @@ function getStatusIcon(status: MigrationStatus): string {
   const icons: Record<MigrationStatus, string> = {
     [MigrationStatus.PENDING]: '⏳',
     [MigrationStatus.IN_PROGRESS]: '🔄',
+    [MigrationStatus.PAUSED]: '⏸️',
     [MigrationStatus.COMPLETED]: '✅',
     [MigrationStatus.FAILED]: '❌',
     [MigrationStatus.ROLLED_BACK]: '⏪'
@@ -132,6 +133,7 @@ function getStatusColor(status: MigrationStatus): (text: string) => string {
   const colors: Record<MigrationStatus, (text: string) => string> = {
     [MigrationStatus.PENDING]: chalk.gray,
     [MigrationStatus.IN_PROGRESS]: chalk.yellow,
+    [MigrationStatus.PAUSED]: chalk.cyan,
     [MigrationStatus.COMPLETED]: chalk.green,
     [MigrationStatus.FAILED]: chalk.red,
     [MigrationStatus.ROLLED_BACK]: chalk.magenta

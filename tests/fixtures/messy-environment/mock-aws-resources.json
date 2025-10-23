@@ -1,0 +1,187 @@
+{
+  "dynamoDbTables": [
+    {
+      "physicalId": "users-table-dev",
+      "arn": "arn:aws:dynamodb:us-east-1:123456789012:table/users-table-dev",
+      "region": "us-east-1",
+      "tags": {
+        "Environment": "dev",
+        "ManagedBy": "serverless"
+      },
+      "createdAt": "2024-01-15T10:30:00Z",
+      "metadata": {
+        "keySchema": [
+          { "AttributeName": "userId", "KeyType": "HASH" }
+        ],
+        "billingMode": "PAY_PER_REQUEST",
+        "itemCount": 1523,
+        "globalSecondaryIndexes": [
+          {
+            "IndexName": "EmailIndex",
+            "KeySchema": [
+              { "AttributeName": "email", "KeyType": "HASH" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "physicalId": "users-table-prod",
+      "arn": "arn:aws:dynamodb:us-east-1:123456789012:table/users-table-prod",
+      "region": "us-east-1",
+      "tags": {
+        "Environment": "prod"
+      },
+      "createdAt": "2023-06-10T08:15:00Z",
+      "metadata": {
+        "keySchema": [
+          { "AttributeName": "userId", "KeyType": "HASH" }
+        ],
+        "billingMode": "PAY_PER_REQUEST",
+        "itemCount": 45632
+      }
+    },
+    {
+      "physicalId": "legacy-users",
+      "arn": "arn:aws:dynamodb:us-east-1:123456789012:table/legacy-users",
+      "region": "us-east-1",
+      "tags": {},
+      "createdAt": "2022-03-20T14:45:00Z",
+      "metadata": {
+        "keySchema": [
+          { "AttributeName": "id", "KeyType": "HASH" }
+        ],
+        "billingMode": "PROVISIONED",
+        "itemCount": 892
+      }
+    },
+    {
+      "physicalId": "orders-table-dev",
+      "arn": "arn:aws:dynamodb:us-east-1:123456789012:table/orders-table-dev",
+      "region": "us-east-1",
+      "tags": {
+        "Environment": "dev"
+      },
+      "createdAt": "2024-01-15T10:35:00Z",
+      "metadata": {
+        "keySchema": [
+          { "AttributeName": "orderId", "KeyType": "HASH" }
+        ],
+        "billingMode": "PROVISIONED",
+        "provisionedThroughput": {
+          "ReadCapacityUnits": 5,
+          "WriteCapacityUnits": 5
+        },
+        "itemCount": 634
+      }
+    }
+  ],
+  "s3Buckets": [
+    {
+      "physicalId": "messy-app-data-dev",
+      "arn": "arn:aws:s3:::messy-app-data-dev",
+      "region": "us-east-1",
+      "tags": {
+        "Environment": "dev"
+      },
+      "createdAt": "2024-01-15T10:32:00Z",
+      "metadata": {
+        "versioning": "Enabled",
+        "encryption": "AES256"
+      }
+    }
+  ],
+  "iamRoles": [
+    {
+      "physicalId": "messy-app-api-role-dev",
+      "arn": "arn:aws:iam::123456789012:role/messy-app-api-role-dev",
+      "region": "us-east-1",
+      "tags": {},
+      "createdAt": "2024-01-15T10:28:00Z",
+      "metadata": {
+        "managedPolicies": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+        ],
+        "inlinePolicies": [
+          {
+            "name": "DynamoDBAccess",
+            "document": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ],
+        "driftDetected": true,
+        "driftReason": "Additional managed policy and expanded DynamoDB permissions added manually"
+      }
+    },
+    {
+      "physicalId": "api-role-legacy",
+      "arn": "arn:aws:iam::123456789012:role/api-role-legacy",
+      "region": "us-east-1",
+      "tags": {},
+      "createdAt": "2023-05-20T12:00:00Z",
+      "metadata": {
+        "managedPolicies": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ]
+      }
+    }
+  ],
+  "logGroups": [
+    {
+      "physicalId": "/aws/lambda/messy-app-dev-api-function",
+      "arn": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/messy-app-dev-api-function",
+      "region": "us-east-1",
+      "tags": {},
+      "createdAt": "2024-01-15T10:33:00Z",
+      "metadata": {
+        "retentionInDays": 14
+      }
+    }
+  ],
+  "cloudFormationDrift": {
+    "stackName": "messy-app-dev",
+    "driftStatus": "DRIFTED",
+    "driftedResources": [
+      {
+        "logicalResourceId": "ApiLambdaRole",
+        "physicalResourceId": "messy-app-api-role-dev",
+        "resourceType": "AWS::IAM::Role",
+        "driftStatus": "MODIFIED",
+        "propertyDifferences": [
+          {
+            "propertyPath": "/Properties/ManagedPolicyArns/1",
+            "expectedValue": null,
+            "actualValue": "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess",
+            "differenceType": "ADD"
+          },
+          {
+            "propertyPath": "/Properties/Policies/0/PolicyDocument/Statement/0/Action/2",
+            "expectedValue": null,
+            "actualValue": "dynamodb:Query",
+            "differenceType": "ADD"
+          },
+          {
+            "propertyPath": "/Properties/Policies/0/PolicyDocument/Statement/0/Action/3",
+            "expectedValue": null,
+            "actualValue": "dynamodb:Scan",
+            "differenceType": "ADD"
+          }
+        ]
+      }
+    ]
+  }
+}

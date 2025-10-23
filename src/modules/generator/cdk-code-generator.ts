@@ -8,18 +8,22 @@
  * - Package.json
  */
 
-import { Resource } from '../../types';
+import { Resource, ClassifiedResource } from '../../types';
 import { GeneratorConfig } from './index';
 import { TypeScriptGenerator } from './typescript-generator';
+import { ResourceClassifier } from './resource-classifier';
+import { CodeCleaner } from './code-cleaner';
 
 /**
  * CDK project code generator
  */
 export class CDKCodeGenerator {
   private typeScriptGenerator: TypeScriptGenerator;
+  private resourceClassifier: ResourceClassifier;
 
   constructor() {
     this.typeScriptGenerator = new TypeScriptGenerator();
+    this.resourceClassifier = new ResourceClassifier();
   }
 
   /**
@@ -32,36 +36,101 @@ export class CDKCodeGenerator {
     const stackName = config.stackName || 'MigratedStack';
     const useL2 = config.useL2Constructs !== false;
 
+    // SPRINT 1: Classify all resources FIRST
+    console.log('🔍 Classifying resources...');
+    const classifiedResources: ClassifiedResource[] = [];
+
+    for (const resource of resources) {
+      const classified = this.resourceClassifier.classifyResources(
+        [this.convertToCloudFormationResource(resource)],
+        resource.logicalId
+      )[0];
+      classifiedResources.push(classified);
+    }
+
+    // Add related resources metadata
+    for (let i = 0; i < classifiedResources.length; i++) {
+      classifiedResources[i] = this.resourceClassifier.findRelatedResources(
+        classifiedResources[i],
+        classifiedResources
+      );
+    }
+
+    console.log(`✅ Classified ${classifiedResources.length} resources`);
+    console.log(`📝 Resource Logical IDs:`, classifiedResources.map(r => r.LogicalId));
+
+    // Initialize TypeScriptGenerator with classified resources
+    this.typeScriptGenerator.initializeWithResources(classifiedResources, {
+      stage: config.stackName?.includes('prod') ? 'prod' : 'dev'
+    });
+
     // Generate imports
-    const resourceTypes = new Set(resources.map((r) => r.type));
+    const resourceTypes = new Set(classifiedResources.map((r) => r.Type));
     const imports = this.typeScriptGenerator.generateImports(resourceTypes);
 
     // Generate constructs
     const constructs: string[] = [];
-    for (const resource of resources) {
+    for (const resource of classifiedResources) {
       try {
         const construct = this.typeScriptGenerator.generateConstruct(
           resource,
           useL2
         );
 
-        // Add comment header
-        const comment = construct.comments
-          .map((c) => `    // ${c}`)
-          .join('\n');
+        // Add comment header (only if comments exist)
+        let constructCode = construct.code;
+        if (construct.comments.length > 0) {
+          const comment = construct.comments
+            .map((c) => `    // ${c}`)
+            .join('\n');
+          constructCode = `${comment}\n${constructCode}`;
+        }
 
-        constructs.push(`${comment}\n${construct.code}`);
+        constructs.push(constructCode);
       } catch (error) {
         // Log error but continue
         console.warn(
-          `Warning: Could not generate construct for ${resource.logicalId}:`,
+          `Warning: Could not generate construct for ${resource.LogicalId}:`,
           error
         );
       }
     }
 
-    // Render stack template
-    return this.renderStackTemplate(stackName, imports, constructs);
+    // Combine into stack code
+    let stackCode = this.renderStackTemplate(stackName, imports, constructs);
+    console.log(`📄 Generated ${constructs.length} constructs before cleaning`);
+
+    // SPRINT 3: Run CodeCleaner on the generated code
+    console.log('🧹 Cleaning generated code...');
+    const codeCleaner = new CodeCleaner(classifiedResources);
+    const cleaningResult = codeCleaner.cleanCode(stackCode);
+
+    // Count constructs after cleaning
+    const afterConstructs = (cleaningResult.code.match(/const\s+\w+\s*=\s*new\s+/g) || []).length;
+    console.log(`📄 Have ${afterConstructs} constructs after cleaning`);
+
+    stackCode = cleaningResult.code;
+
+    // Log cleaning metrics
+    console.log('📊 Code Cleaning Metrics:');
+    console.log(`  Comments: ${cleaningResult.metrics.comments.reductionPercentage}% reduction`);
+    console.log(`  Logical ID Overrides: ${cleaningResult.metrics.logicalIds.reductionPercentage}% reduction`);
+    console.log(`  Removal Policies: ${cleaningResult.metrics.removalPolicies.reductionPercentage}% reduction`);
+    console.log(`  Total Reduction: ${cleaningResult.metrics.totalReductionPercentage}%`);
+
+    return stackCode;
+  }
+
+  /**
+   * Convert Resource to CloudFormationResource for classifier
+   */
+  private convertToCloudFormationResource(resource: Resource): any {
+    return {
+      Type: resource.type,
+      Properties: resource.properties,
+      Metadata: resource.metadata,
+      DependsOn: resource.dependencies
+    };
   }
 
   /**
