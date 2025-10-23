@@ -7,31 +7,37 @@ This guide shows you how to quickly test the messy environment features in under
 The fastest way to test all features:
 
 ```bash
-# Run interactive menu
+# Run interactive menu (will prompt for AWS profile)
 ./scripts/test-messy-env.sh
+
+# Or specify profile via command-line
+./scripts/test-messy-env.sh --profile my-aws-profile
 ```
 
 **Menu Options:**
-1. Check prerequisites (verifies AWS, Node.js, CDK)
-2. Setup test environment (creates test project + AWS resources)
-3. Run basic migration test (dry-run)
-4. Run drift detection test (dry-run)
-5. Run confidence scoring test (dry-run)
-6. Show generated CDK code
-7. Show generated reports
-8. Run FULL migration (actual import)
-9. Clean up test resources
+- **P. Select AWS profile** (choose which AWS credentials to use)
+- 1. Check prerequisites (verifies AWS, Node.js, CDK)
+- 2. Setup test environment (creates test project + AWS resources)
+- 3. Run basic migration test (dry-run)
+- 4. Run drift detection test (dry-run)
+- 5. Run confidence scoring test (dry-run)
+- 6. Show generated CDK code
+- 7. Show generated reports
+- 8. Run FULL migration (actual import)
+- 9. Clean up test resources
+- 0. Exit
 
 **Typical Flow:**
 ```bash
 ./scripts/test-messy-env.sh
 
 # In the menu:
+# P. Select AWS profile (if you have multiple profiles)
 # 1. Select option 1 (check prerequisites)
 # 2. Select option 2 (setup test environment)
 # 3. Select option 3 (run basic test)
-# 4. Select option 7 (view reports)
-# 5. Select option 9 (cleanup when done)
+# 7. Select option 7 (view reports)
+# 9. Select option 9 (cleanup when done)
 ```
 
 ## Option 2: Command-Line Testing
@@ -39,13 +45,20 @@ The fastest way to test all features:
 Run specific tests directly:
 
 ```bash
-# Setup everything
+# Setup everything (using default AWS profile)
 ./scripts/test-messy-env.sh setup
+
+# Setup with specific AWS profile
+./scripts/test-messy-env.sh --profile my-aws-profile setup
 
 # Run individual tests
 ./scripts/test-messy-env.sh test1   # Basic migration
 ./scripts/test-messy-env.sh test2   # Drift detection
 ./scripts/test-messy-env.sh test3   # Confidence scoring
+
+# Run tests with specific profile
+./scripts/test-messy-env.sh --profile production test1
+./scripts/test-messy-env.sh --profile staging test2
 
 # Full migration (actual import)
 ./scripts/test-messy-env.sh full
@@ -53,6 +66,13 @@ Run specific tests directly:
 # Cleanup
 ./scripts/test-messy-env.sh cleanup
 ```
+
+**Available AWS Profile Options:**
+
+The script will use your configured AWS profiles from `~/.aws/credentials` or `~/.aws/config`. You can:
+- Use default profile (no flag)
+- Specify profile via `--profile` flag
+- Select interactively from menu option P
 
 ## Option 3: Manual Step-by-Step
 

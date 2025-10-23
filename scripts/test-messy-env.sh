@@ -5,6 +5,10 @@
 
 set -e
 
+# Global variables
+AWS_PROFILE=""
+AWS_PROFILE_FLAG=""
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,6 +39,55 @@ print_info() {
   echo -e "${BLUE}ℹ $1${NC}"
 }
 
+# List available AWS profiles
+list_aws_profiles() {
+  if [ -f ~/.aws/credentials ]; then
+    grep '^\[' ~/.aws/credentials | tr -d '[]' | grep -v '^#'
+  elif [ -f ~/.aws/config ]; then
+    grep '^\[profile' ~/.aws/config | sed 's/\[profile \(.*\)\]/\1/'
+  fi
+}
+
+# Select AWS profile
+select_aws_profile() {
+  print_header "AWS Profile Selection"
+
+  # List available profiles
+  PROFILES=($(list_aws_profiles))
+
+  if [ ${#PROFILES[@]} -eq 0 ]; then
+    print_warning "No AWS profiles found in ~/.aws/credentials or ~/.aws/config"
+    print_info "Using default credentials"
+    AWS_PROFILE=""
+    AWS_PROFILE_FLAG=""
+    return
+  fi
+
+  print_info "Available AWS profiles:"
+  echo ""
+
+  for i in "${!PROFILES[@]}"; do
+    echo "  $((i+1)). ${PROFILES[$i]}"
+  done
+  echo "  0. Use default (no profile)"
+  echo ""
+
+  read -p "Select profile (0-${#PROFILES[@]}): " profile_choice
+
+  if [ "$profile_choice" == "0" ]; then
+    print_info "Using default credentials (no profile)"
+    AWS_PROFILE=""
+    AWS_PROFILE_FLAG=""
+  elif [ "$profile_choice" -ge 1 ] && [ "$profile_choice" -le "${#PROFILES[@]}" ]; then
+    AWS_PROFILE="${PROFILES[$((profile_choice-1))]}"
+    AWS_PROFILE_FLAG="--profile $AWS_PROFILE"
+    print_success "Selected profile: $AWS_PROFILE"
+  else
+    print_error "Invalid selection"
+    select_aws_profile
+  fi
+}
+
 # Check prerequisites
 check_prerequisites() {
   print_header "Checking Prerequisites"
@@ -47,15 +100,19 @@ check_prerequisites() {
   print_success "AWS CLI installed"
 
   # Check AWS credentials
-  if ! aws sts get-caller-identity &> /dev/null; then
+  if ! aws sts get-caller-identity $AWS_PROFILE_FLAG &> /dev/null; then
     print_error "AWS credentials not configured. Run 'aws configure'"
     exit 1
   fi
   print_success "AWS credentials configured"
 
   # Get AWS account info
-  ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-  REGION=$(aws configure get region)
+  ACCOUNT_ID=$(aws sts get-caller-identity $AWS_PROFILE_FLAG --query Account --output text)
+  REGION=$(aws configure get region $AWS_PROFILE_FLAG)
+
+  if [ -n "$AWS_PROFILE" ]; then
+    print_info "AWS Profile: $AWS_PROFILE"
+  fi
   print_info "AWS Account: $ACCOUNT_ID"
   print_info "Region: $REGION"
 
@@ -204,7 +261,7 @@ create_aws_resources() {
 
   # Exact match table
   print_info "Creating messy-test-users table..."
-  aws dynamodb create-table \
+  aws dynamodb create-table $AWS_PROFILE_FLAG \
     --table-name messy-test-users \
     --attribute-definitions AttributeName=id,AttributeType=S \
     --key-schema AttributeName=id,KeyType=HASH \
@@ -216,7 +273,7 @@ create_aws_resources() {
 
   # Fuzzy match table (note the 's' at the end)
   print_info "Creating messy-test-orders table..."
-  aws dynamodb create-table \
+  aws dynamodb create-table $AWS_PROFILE_FLAG \
     --table-name messy-test-orders \
     --attribute-definitions AttributeName=id,AttributeType=S \
     --key-schema AttributeName=id,KeyType=HASH \
@@ -228,7 +285,7 @@ create_aws_resources() {
 
   # Drift scenario table
   print_info "Creating messy-test-sessions table..."
-  aws dynamodb create-table \
+  aws dynamodb create-table $AWS_PROFILE_FLAG \
     --table-name messy-test-sessions \
     --attribute-definitions AttributeName=sessionId,AttributeType=S \
     --key-schema AttributeName=sessionId,KeyType=HASH \
@@ -238,7 +295,7 @@ create_aws_resources() {
   # Enable TTL to create drift
   sleep 2  # Wait for table to be active
   print_info "Enabling TTL (creates drift)..."
-  aws dynamodb update-time-to-live \
+  aws dynamodb update-time-to-live $AWS_PROFILE_FLAG \
     --table-name messy-test-sessions \
     --time-to-live-specification "Enabled=true,AttributeName=ttl" \
     > /dev/null 2>&1 || print_warning "TTL already enabled"
@@ -255,7 +312,7 @@ run_basic_test() {
   cd ../..  # Back to project root
 
   print_info "Running migration with auto-discovery..."
-  npm run migrate -- \
+  AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
     --dry-run \
     2>&1 | tee "./$TEST_DIR/test-1-output.log"
@@ -268,7 +325,7 @@ run_drift_test() {
   print_header "Test 2: Drift Detection"
 
   print_info "Running migration with drift detection..."
-  npm run migrate -- \
+  AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
     --enable-drift-detection \
     --dry-run \
@@ -282,7 +339,7 @@ run_confidence_test() {
   print_header "Test 3: Confidence Scoring Analysis"
 
   print_info "Analyzing confidence scores..."
-  npm run migrate -- \
+  AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
     --show-confidence-breakdown \
     --dry-run \
@@ -346,9 +403,9 @@ cleanup() {
   if [[ $REPLY =~ ^[Yy]$ ]]; then
     print_info "Deleting DynamoDB tables..."
 
-    aws dynamodb delete-table --table-name messy-test-users > /dev/null 2>&1 || true
-    aws dynamodb delete-table --table-name messy-test-orders > /dev/null 2>&1 || true
-    aws dynamodb delete-table --table-name messy-test-sessions > /dev/null 2>&1 || true
+    aws dynamodb delete-table $AWS_PROFILE_FLAG --table-name messy-test-users > /dev/null 2>&1 || true
+    aws dynamodb delete-table $AWS_PROFILE_FLAG --table-name messy-test-orders > /dev/null 2>&1 || true
+    aws dynamodb delete-table $AWS_PROFILE_FLAG --table-name messy-test-sessions > /dev/null 2>&1 || true
 
     print_success "AWS resources deleted"
   fi
@@ -369,6 +426,15 @@ show_menu() {
   echo -e "${BLUE}  Messy Environment Testing Menu${NC}"
   echo -e "${BLUE}═══════════════════════════════════════════════════════════${NC}\n"
 
+  # Show current profile
+  if [ -n "$AWS_PROFILE" ]; then
+    print_info "Current AWS Profile: $AWS_PROFILE"
+  else
+    print_info "Current AWS Profile: default"
+  fi
+  echo ""
+
+  echo "P. Select AWS profile"
   echo "1. Check prerequisites"
   echo "2. Setup test environment (create test project & AWS resources)"
   echo "3. Run Test 1: Basic migration with auto-discovery (dry-run)"
@@ -384,6 +450,7 @@ show_menu() {
   echo ""
 
   case $choice in
+    P|p) select_aws_profile ;;
     1) check_prerequisites ;;
     2)
       setup_test_dir
@@ -401,7 +468,7 @@ show_menu() {
       read -p "Are you sure? (yes/no) " -r
       echo
       if [[ $REPLY == "yes" ]]; then
-        npm run migrate -- \
+        AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
           --source "./$TEST_DIR/serverless-project" \
           --enable-drift-detection \
           --execute-import \
@@ -438,16 +505,43 @@ main() {
 EOF
   echo -e "${NC}"
 
-  # If no arguments, show interactive menu
-  if [ $# -eq 0 ]; then
+  # Parse command-line arguments
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --profile)
+        AWS_PROFILE="$2"
+        AWS_PROFILE_FLAG="--profile $AWS_PROFILE"
+        print_info "Using AWS profile: $AWS_PROFILE"
+        shift 2
+        ;;
+      setup|test1|test2|test3|full|cleanup)
+        # Command argument - process below
+        COMMAND="$1"
+        shift
+        ;;
+      *)
+        print_error "Unknown argument: $1"
+        echo "Usage: $0 [--profile PROFILE_NAME] [setup|test1|test2|test3|full|cleanup]"
+        exit 1
+        ;;
+    esac
+  done
+
+  # If no command specified, show interactive menu
+  if [ -z "$COMMAND" ]; then
+    # Ask for profile if not specified
+    if [ -z "$AWS_PROFILE" ]; then
+      select_aws_profile
+    fi
+
     while true; do
       show_menu
       echo ""
       read -p "Press Enter to continue..."
     done
   else
-    # Run specific test by argument
-    case $1 in
+    # Run specific test by command
+    case $COMMAND in
       setup)
         check_prerequisites
         setup_test_dir
@@ -459,15 +553,15 @@ EOF
       test3) run_confidence_test ;;
       full)
         print_warning "Running FULL migration"
-        npm run migrate -- \
+        AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
           --source "./$TEST_DIR/serverless-project" \
           --enable-drift-detection \
           --execute-import
         ;;
       cleanup) cleanup ;;
       *)
-        print_error "Unknown command: $1"
-        echo "Usage: $0 [setup|test1|test2|test3|full|cleanup]"
+        print_error "Unknown command: $COMMAND"
+        echo "Usage: $0 [--profile PROFILE_NAME] [setup|test1|test2|test3|full|cleanup]"
         exit 1
         ;;
     esac
