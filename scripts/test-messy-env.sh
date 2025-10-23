@@ -443,10 +443,21 @@ cleanup() {
   echo -n "Delete local test directory? (y/n) "
   read -r LOCAL_ANSWER
   if [[ $LOCAL_ANSWER =~ ^[Yy]$ ]]; then
-    cd ..
-    rm -rf "$TEST_DIR"
-    rm -rf .migration-state
-    print_success "Local test directory deleted"
+    # Ensure we're in project root
+    cd "$PROJECT_ROOT"
+
+    # Delete test directory and migration state
+    if [ -n "$TEST_DIR" ] && [ -d "$TEST_DIR" ]; then
+      rm -rf "$TEST_DIR"
+      print_success "Deleted test directory: $TEST_DIR"
+    else
+      print_warning "Test directory not found: $TEST_DIR"
+    fi
+
+    if [ -d ".migration-state" ]; then
+      rm -rf .migration-state
+      print_success "Deleted migration state"
+    fi
   else
     print_info "Skipped local directory deletion"
   fi
