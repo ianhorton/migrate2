@@ -402,9 +402,10 @@ show_reports() {
 cleanup() {
   print_header "Cleanup Test Resources"
 
-  read -p "Delete AWS test resources? (y/n) " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
+  # AWS resources cleanup
+  echo -n "Delete AWS test resources? (y/n) "
+  read -r AWS_ANSWER
+  if [[ $AWS_ANSWER =~ ^[Yy]$ ]]; then
     print_info "Deleting DynamoDB tables..."
 
     aws dynamodb delete-table $AWS_PROFILE_FLAG --table-name messy-test-users > /dev/null 2>&1 || true
@@ -412,16 +413,21 @@ cleanup() {
     aws dynamodb delete-table $AWS_PROFILE_FLAG --table-name messy-test-sessions > /dev/null 2>&1 || true
 
     print_success "AWS resources deleted"
+  else
+    print_info "Skipped AWS resource deletion"
   fi
 
+  # Local directory cleanup
   echo ""
-  read -p "Delete local test directory? (y/n) " -n 1 -r
-  echo
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
+  echo -n "Delete local test directory? (y/n) "
+  read -r LOCAL_ANSWER
+  if [[ $LOCAL_ANSWER =~ ^[Yy]$ ]]; then
     cd ..
     rm -rf "$TEST_DIR"
     rm -rf .migration-state
     print_success "Local test directory deleted"
+  else
+    print_info "Skipped local directory deletion"
   fi
 
   echo ""
