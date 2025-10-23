@@ -414,6 +414,7 @@ cleanup() {
     print_success "AWS resources deleted"
   fi
 
+  echo ""
   read -p "Delete local test directory? (y/n) " -n 1 -r
   echo
   if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -422,6 +423,9 @@ cleanup() {
     rm -rf .migration-state
     print_success "Local test directory deleted"
   fi
+
+  echo ""
+  print_success "Cleanup complete!"
 }
 
 # Interactive menu
