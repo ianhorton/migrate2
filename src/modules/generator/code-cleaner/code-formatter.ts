@@ -234,11 +234,14 @@ export class CodeFormatter {
       return code;
     }
 
+    // Remove duplicates by using a Set
+    const uniqueImports = Array.from(new Set(imports));
+
     // Separate imports into categories
-    const constructImports = imports.filter(imp => imp.includes("from 'constructs'"));
-    const coreImports = imports.filter(imp => imp.includes("'aws-cdk-lib'") && !imp.includes('/'));
-    const serviceImports = imports.filter(imp => imp.includes('/aws-'));
-    const otherImports = imports.filter(imp =>
+    const constructImports = uniqueImports.filter(imp => imp.includes("from 'constructs'"));
+    const coreImports = uniqueImports.filter(imp => imp.includes("'aws-cdk-lib'") && !imp.includes('/'));
+    const serviceImports = uniqueImports.filter(imp => imp.includes('/aws-'));
+    const otherImports = uniqueImports.filter(imp =>
       !imp.includes("from 'constructs'") &&
       !imp.includes("'aws-cdk-lib'") &&
       !imp.includes('/aws-')
