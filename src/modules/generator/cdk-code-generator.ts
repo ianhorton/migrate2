@@ -290,7 +290,9 @@ app.synth();
     imports: string[],
     constructs: string[]
   ): string {
-    const importSection = imports.join('\n');
+    // Always include Construct import for CDK v2
+    const allImports = ['import { Construct } from \'constructs\';', ...imports];
+    const importSection = allImports.join('\n');
     const constructSection = constructs.join('\n\n');
 
     return `${importSection}
