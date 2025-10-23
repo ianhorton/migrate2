@@ -8,6 +8,8 @@ set -e
 # Global variables
 AWS_PROFILE=""
 AWS_PROFILE_FLAG=""
+PROJECT_ROOT=""
+TEST_DIR=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -137,6 +139,9 @@ check_prerequisites() {
 setup_test_dir() {
   print_header "Setting Up Test Directory"
 
+  # Ensure we're in project root
+  cd "$PROJECT_ROOT"
+
   TEST_DIR="test-manual-$(date +%s)"
   mkdir -p "$TEST_DIR/serverless-project"
   cd "$TEST_DIR/serverless-project"
@@ -245,6 +250,9 @@ EOF
   print_success "Created serverless.yml"
   print_success "Created handler.js"
   print_success "Created package.json"
+
+  # Return to project root
+  cd "$PROJECT_ROOT"
 }
 
 # Create AWS test resources
@@ -309,7 +317,8 @@ create_aws_resources() {
 run_basic_test() {
   print_header "Test 1: Basic Migration (Dry-Run)"
 
-  cd ../..  # Back to project root
+  # Ensure we're in project root
+  cd "$PROJECT_ROOT"
 
   print_info "Running migration in dry-run mode..."
   AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
@@ -325,6 +334,9 @@ run_basic_test() {
 run_drift_test() {
   print_header "Test 2: Migration with Auto-Approve"
 
+  # Ensure we're in project root
+  cd "$PROJECT_ROOT"
+
   print_info "Running migration with auto-approve..."
   AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
@@ -339,6 +351,9 @@ run_drift_test() {
 # Run with specific stage/region
 run_confidence_test() {
   print_header "Test 3: Migration with Stage and Region"
+
+  # Ensure we're in project root
+  cd "$PROJECT_ROOT"
 
   print_info "Running migration with custom stage and region..."
   AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
@@ -356,6 +371,9 @@ run_confidence_test() {
 show_generated_code() {
   print_header "Generated CDK Code"
 
+  # Ensure we're in project root
+  cd "$PROJECT_ROOT"
+
   CDK_STACK="./$TEST_DIR/serverless-project/cdk/lib/cdk-stack.ts"
 
   if [ -f "$CDK_STACK" ]; then
@@ -369,6 +387,9 @@ show_generated_code() {
 # Show reports
 show_reports() {
   print_header "Generated Reports"
+
+  # Ensure we're in project root
+  cd "$PROJECT_ROOT"
 
   MIGRATION_STATE=".migration-state"
 
@@ -483,6 +504,7 @@ show_menu() {
       read -p "Are you sure? (yes/no) " -r
       echo
       if [[ $REPLY == "yes" ]]; then
+        cd "$PROJECT_ROOT"
         AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
           --source "./$TEST_DIR/serverless-project" \
           --verbose \
@@ -518,6 +540,9 @@ main() {
   ╚═══════════════════════════════════════════════════════════╝
 EOF
   echo -e "${NC}"
+
+  # Store absolute project root
+  PROJECT_ROOT=$(pwd)
 
   # Parse command-line arguments
   while [[ $# -gt 0 ]]; do
@@ -567,6 +592,7 @@ EOF
       test3) run_confidence_test ;;
       full)
         print_warning "Running FULL migration (no dry-run)"
+        cd "$PROJECT_ROOT"
         AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
           --source "./$TEST_DIR/serverless-project" \
           --verbose
