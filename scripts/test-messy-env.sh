@@ -307,42 +307,46 @@ create_aws_resources() {
 
 # Run basic migration test
 run_basic_test() {
-  print_header "Test 1: Basic Migration with Auto-Discovery"
+  print_header "Test 1: Basic Migration (Dry-Run)"
 
   cd ../..  # Back to project root
 
-  print_info "Running migration with auto-discovery..."
+  print_info "Running migration in dry-run mode..."
   AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
     --dry-run \
+    --verbose \
     2>&1 | tee "./$TEST_DIR/test-1-output.log"
 
   print_success "Test 1 complete - Check ./$TEST_DIR/test-1-output.log"
 }
 
-# Run drift detection test
+# Run with auto-approve test
 run_drift_test() {
-  print_header "Test 2: Drift Detection"
+  print_header "Test 2: Migration with Auto-Approve"
 
-  print_info "Running migration with drift detection..."
+  print_info "Running migration with auto-approve..."
   AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
-    --enable-drift-detection \
     --dry-run \
+    --auto-approve \
+    --verbose \
     2>&1 | tee "./$TEST_DIR/test-2-output.log"
 
   print_success "Test 2 complete - Check ./$TEST_DIR/test-2-output.log"
 }
 
-# Run confidence scoring test
+# Run with specific stage/region
 run_confidence_test() {
-  print_header "Test 3: Confidence Scoring Analysis"
+  print_header "Test 3: Migration with Stage and Region"
 
-  print_info "Analyzing confidence scores..."
+  print_info "Running migration with custom stage and region..."
   AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
     --source "./$TEST_DIR/serverless-project" \
-    --show-confidence-breakdown \
+    --stage production \
+    --region us-east-1 \
     --dry-run \
+    --verbose \
     2>&1 | tee "./$TEST_DIR/test-3-output.log"
 
   print_success "Test 3 complete - Check ./$TEST_DIR/test-3-output.log"
@@ -437,12 +441,12 @@ show_menu() {
   echo "P. Select AWS profile"
   echo "1. Check prerequisites"
   echo "2. Setup test environment (create test project & AWS resources)"
-  echo "3. Run Test 1: Basic migration with auto-discovery (dry-run)"
-  echo "4. Run Test 2: Migration with drift detection (dry-run)"
-  echo "5. Run Test 3: Confidence scoring analysis (dry-run)"
+  echo "3. Run Test 1: Basic migration (dry-run)"
+  echo "4. Run Test 2: Migration with auto-approve (dry-run)"
+  echo "5. Run Test 3: Migration with stage/region (dry-run)"
   echo "6. Show generated CDK code"
   echo "7. Show generated reports"
-  echo "8. Run FULL migration (execute actual import)"
+  echo "8. Run FULL migration (without dry-run)"
   echo "9. Clean up test resources"
   echo "0. Exit"
   echo ""
@@ -464,14 +468,14 @@ show_menu() {
     7) show_reports ;;
     8)
       print_header "Running FULL Migration"
-      print_warning "This will execute actual CDK import!"
+      print_warning "This will execute actual migration (NO dry-run)!"
+      print_warning "This will create CDK project and initialize it."
       read -p "Are you sure? (yes/no) " -r
       echo
       if [[ $REPLY == "yes" ]]; then
         AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
           --source "./$TEST_DIR/serverless-project" \
-          --enable-drift-detection \
-          --execute-import \
+          --verbose \
           2>&1 | tee "./$TEST_DIR/full-migration.log"
       else
         print_info "Cancelled"
@@ -552,11 +556,10 @@ EOF
       test2) run_drift_test ;;
       test3) run_confidence_test ;;
       full)
-        print_warning "Running FULL migration"
+        print_warning "Running FULL migration (no dry-run)"
         AWS_PROFILE=$AWS_PROFILE npm run migrate -- \
           --source "./$TEST_DIR/serverless-project" \
-          --enable-drift-detection \
-          --execute-import
+          --verbose
         ;;
       cleanup) cleanup ;;
       *)

@@ -18,12 +18,12 @@ The fastest way to test all features:
 - **P. Select AWS profile** (choose which AWS credentials to use)
 - 1. Check prerequisites (verifies AWS, Node.js, CDK)
 - 2. Setup test environment (creates test project + AWS resources)
-- 3. Run basic migration test (dry-run)
-- 4. Run drift detection test (dry-run)
-- 5. Run confidence scoring test (dry-run)
+- 3. Run Test 1: Basic migration (dry-run)
+- 4. Run Test 2: Migration with auto-approve (dry-run)
+- 5. Run Test 3: Migration with stage/region (dry-run)
 - 6. Show generated CDK code
 - 7. Show generated reports
-- 8. Run FULL migration (actual import)
+- 8. Run FULL migration (without dry-run)
 - 9. Clean up test resources
 - 0. Exit
 
@@ -73,6 +73,31 @@ The script will use your configured AWS profiles from `~/.aws/credentials` or `~
 - Use default profile (no flag)
 - Specify profile via `--profile` flag
 - Select interactively from menu option P
+
+---
+
+## ⚠️ Important Note: Messy Environment Features
+
+The messy environment features (drift detection, confidence scoring, resource discovery, etc.) are **built into the code** and work automatically during migration. They don't require special CLI flags.
+
+**Available CLI Flags:**
+- `--source <dir>` - Source directory with serverless.yml
+- `--target <dir>` - Target directory for CDK output
+- `--dry-run` - Preview changes without executing
+- `--auto-approve` - Skip approval prompts
+- `--stage <stage>` - Serverless stage (dev, prod, etc.)
+- `--region <region>` - AWS region
+- `--verbose` - Detailed logging
+- `--skip-backup` - Don't create backups
+- `--resume <id>` - Resume previous migration
+
+The tests demonstrate the migration tool working with real AWS resources. When you run the migration, it will automatically:
+✅ Discover AWS resources
+✅ Match CloudFormation logical IDs to physical resources
+✅ Calculate confidence scores
+✅ Prompt for human intervention when needed
+
+---
 
 ## Option 3: Manual Step-by-Step
 
