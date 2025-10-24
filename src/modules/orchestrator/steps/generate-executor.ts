@@ -103,15 +103,13 @@ export class GenerateExecutor extends BaseStepExecutor {
     await fs.writeFile(cdkJsonPath, cdkCode.cdkConfig, 'utf8');
     this.logger.info(`cdk.json written with CDK configuration`);
 
-    // Write app entry point (bin/app.ts or bin/cdk.ts depending on cdk init)
+    // Write app entry point (bin/app.ts - standard CDK convention)
     const binDir = path.join(targetDir, 'bin');
     await fs.mkdir(binDir, { recursive: true });
 
-    // Determine app file name based on CDK init conventions
-    const appFileName = path.basename(path.resolve(targetDir));
-    const appFilePath = path.join(binDir, `${appFileName}.ts`);
+    const appFilePath = path.join(binDir, 'app.ts');
     await fs.writeFile(appFilePath, cdkCode.appCode, 'utf8');
-    this.logger.info(`App entry point written to: ${path.basename(appFilePath)}`);
+    this.logger.info(`App entry point written to: bin/app.ts`);
 
     // Step 4: Install dependencies
     if (!state.config.dryRun) {
