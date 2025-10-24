@@ -53,12 +53,13 @@ export class GenerateExecutor extends BaseStepExecutor {
     const scanData = state.stepResults[MigrationStep.INITIAL_SCAN].data;
     const cfTemplate: CloudFormationTemplate = scanData.cloudFormationTemplate;
 
-    // Step 1: Initialize CDK project if it doesn't exist
-    await this.ensureCDKProject(targetDir, cdkLanguage);
+    // Step 1: Create CDK folder and initialize CDK project
+    const cdkDir = path.join(targetDir, 'cdk');
+    await fs.mkdir(cdkDir, { recursive: true });
+    await this.ensureCDKProject(cdkDir, cdkLanguage);
 
-    // Derive stack name from target directory (e.g., "foo-test" -> "FooTestStack")
-    const dirName = path.basename(path.resolve(targetDir));
-    const stackName = this.toPascalCase(dirName) + 'Stack';
+    // Stack name is always "CdkStack" since the folder is named "cdk"
+    const stackName = 'CdkStack';
 
     // Step 2: Generate CDK code
     this.logger.info('Generating CDK constructs...');
@@ -84,46 +85,27 @@ export class GenerateExecutor extends BaseStepExecutor {
       includeComments: true
     });
 
-    // Step 3: Write CDK code to files
-    const stackFilePath = await this.writeCDKStack(
-      targetDir,
-      cdkLanguage,
-      stackName,
-      cdkCode
-    );
-    this.logger.info(`CDK stack written to: ${stackFilePath}`);
+    // Step 3: Overwrite CDK-generated files with our custom code
+    // cdk init creates: bin/cdk.ts, lib/cdk-stack.ts, cdk.json (already correct)
 
-    // Write app entry point - use the file created by cdk init (e.g., bin/cdk.ts)
-    const binDir = path.join(targetDir, 'bin');
-    await fs.mkdir(binDir, { recursive: true });
+    // Overwrite bin/cdk.ts
+    const binFilePath = path.join(cdkDir, 'bin', 'cdk.ts');
+    await fs.writeFile(binFilePath, cdkCode.appCode, 'utf8');
+    this.logger.info(`✓ Overwrote bin/cdk.ts with custom app code`);
 
-    // Find the existing TypeScript file created by cdk init
-    const binFiles = await fs.readdir(binDir);
-    const existingAppFile = binFiles.find(f => f.endsWith('.ts'));
+    // Overwrite lib/cdk-stack.ts
+    const stackFilePath = path.join(cdkDir, 'lib', 'cdk-stack.ts');
+    await fs.writeFile(stackFilePath, cdkCode.stackCode, 'utf8');
+    this.logger.info(`✓ Overwrote lib/cdk-stack.ts with generated stack code`);
 
-    const appFileName = existingAppFile || 'app.ts';
-    const appFilePath = path.join(binDir, appFileName);
-
-    await fs.writeFile(appFilePath, cdkCode.appCode, 'utf8');
-    this.logger.info(`App entry point written to: ${path.relative(targetDir, appFilePath)}`);
-
-    // Write package.json
-    const packageJsonPath = path.join(targetDir, 'package.json');
+    // Overwrite package.json with our custom dependencies
+    const packageJsonPath = path.join(cdkDir, 'package.json');
     await fs.writeFile(packageJsonPath, cdkCode.packageJson, 'utf8');
-    this.logger.info(`package.json written with custom dependencies`);
-
-    // Write cdk.json with correct bin file reference
-    const cdkConfigObj = JSON.parse(cdkCode.cdkConfig);
-    cdkConfigObj.app = `npx ts-node --prefer-ts-exts bin/${appFileName}`;
-    const updatedCdkConfig = JSON.stringify(cdkConfigObj, null, 2);
-
-    const cdkJsonPath = path.join(targetDir, 'cdk.json');
-    await fs.writeFile(cdkJsonPath, updatedCdkConfig, 'utf8');
-    this.logger.info(`cdk.json written with CDK configuration (pointing to bin/${appFileName})`);
+    this.logger.info(`✓ Overwrote package.json with custom dependencies`);
 
     // Step 4: Install dependencies
     if (!state.config.dryRun) {
-      await this.installDependencies(targetDir, cdkLanguage);
+      await this.installDependencies(cdkDir, cdkLanguage);
     }
 
     // Step 5: Synthesize CDK stack (even in dry-run for comparison)
@@ -132,11 +114,11 @@ export class GenerateExecutor extends BaseStepExecutor {
 
     this.logger.info('Synthesizing CDK stack...');
     try {
-      await this.synthesizeCDK(targetDir);
+      await this.synthesizeCDK(cdkDir);
       synthesized = true;
 
       // Find synthesized template from CDK manifest
-      const manifestPath = path.join(targetDir, 'cdk.out', 'manifest.json');
+      const manifestPath = path.join(cdkDir, 'cdk.out', 'manifest.json');
       const manifestExists = await fs.access(manifestPath).then(() => true).catch(() => false);
 
       if (manifestExists) {
@@ -149,7 +131,7 @@ export class GenerateExecutor extends BaseStepExecutor {
         ) as any;
 
         if (stackArtifact?.properties?.templateFile) {
-          templatePath = path.join(targetDir, 'cdk.out', stackArtifact.properties.templateFile);
+          templatePath = path.join(cdkDir, 'cdk.out', stackArtifact.properties.templateFile);
           this.logger.info(`Synthesized template: ${templatePath}`);
           if (state.config.dryRun) {
             this.logger.info('(Dry-run mode: template synthesized for comparison only)');
@@ -171,7 +153,7 @@ export class GenerateExecutor extends BaseStepExecutor {
 
     const result: GenerateResult = {
       cdkCode,
-      projectPath: targetDir,
+      projectPath: cdkDir,
       synthesized,
       templatePath
     };

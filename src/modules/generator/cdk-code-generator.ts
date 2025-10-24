@@ -134,16 +134,19 @@ export class CDKCodeGenerator {
   }
 
   /**
-   * Generate app entry point (bin/app.ts)
+   * Generate app entry point (bin/cdk.ts)
+   * Matches the cdk init pattern where folder name "cdk" creates lib/cdk-stack.ts
    */
   async generateApp(config: GeneratorConfig): Promise<string> {
     const stackName = config.stackName || 'MigratedStack';
+    // For cdk init pattern: folder is "cdk", so import is from '../lib/cdk-stack'
+    // The stack file is always named after the folder (e.g., cdk-stack.ts)
     const stackFileName = this.toKebabCase(stackName);
 
     return `#!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { ${stackName} } from '../lib/${stackFileName}-stack';
+import { ${stackName} } from '../lib/${stackFileName}';
 
 const app = new cdk.App();
 
