@@ -93,23 +93,33 @@ export class GenerateExecutor extends BaseStepExecutor {
     );
     this.logger.info(`CDK stack written to: ${stackFilePath}`);
 
+    // Write app entry point - use the file created by cdk init (e.g., bin/cdk.ts)
+    const binDir = path.join(targetDir, 'bin');
+    await fs.mkdir(binDir, { recursive: true });
+
+    // Find the existing TypeScript file created by cdk init
+    const binFiles = await fs.readdir(binDir);
+    const existingAppFile = binFiles.find(f => f.endsWith('.ts'));
+
+    const appFileName = existingAppFile || 'app.ts';
+    const appFilePath = path.join(binDir, appFileName);
+
+    await fs.writeFile(appFilePath, cdkCode.appCode, 'utf8');
+    this.logger.info(`App entry point written to: ${path.relative(targetDir, appFilePath)}`);
+
     // Write package.json
     const packageJsonPath = path.join(targetDir, 'package.json');
     await fs.writeFile(packageJsonPath, cdkCode.packageJson, 'utf8');
     this.logger.info(`package.json written with custom dependencies`);
 
-    // Write cdk.json
+    // Write cdk.json with correct bin file reference
+    const cdkConfigObj = JSON.parse(cdkCode.cdkConfig);
+    cdkConfigObj.app = `npx ts-node --prefer-ts-exts bin/${appFileName}`;
+    const updatedCdkConfig = JSON.stringify(cdkConfigObj, null, 2);
+
     const cdkJsonPath = path.join(targetDir, 'cdk.json');
-    await fs.writeFile(cdkJsonPath, cdkCode.cdkConfig, 'utf8');
-    this.logger.info(`cdk.json written with CDK configuration`);
-
-    // Write app entry point (bin/app.ts - standard CDK convention)
-    const binDir = path.join(targetDir, 'bin');
-    await fs.mkdir(binDir, { recursive: true });
-
-    const appFilePath = path.join(binDir, 'app.ts');
-    await fs.writeFile(appFilePath, cdkCode.appCode, 'utf8');
-    this.logger.info(`App entry point written to: bin/app.ts`);
+    await fs.writeFile(cdkJsonPath, updatedCdkConfig, 'utf8');
+    this.logger.info(`cdk.json written with CDK configuration (pointing to bin/${appFileName})`);
 
     // Step 4: Install dependencies
     if (!state.config.dryRun) {
