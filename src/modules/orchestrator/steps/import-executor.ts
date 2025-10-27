@@ -12,12 +12,16 @@ import { execSync, spawn } from 'child_process';
 import * as AWS from 'aws-sdk';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { ImportResourceGenerator } from '../../importer/import-resource-generator';
 
 interface ImportResult {
   importedResources: string[];
   importMethod: 'interactive' | 'automatic';
   importOutput: string;
   stackId?: string;
+  importableCount?: number;
+  skippedCount?: number;
+  warnings?: string[];
 }
 
 export class ImportExecutor extends BaseStepExecutor {
@@ -48,7 +52,7 @@ export class ImportExecutor extends BaseStepExecutor {
   }
 
   protected async executeStep(state: MigrationState): Promise<ImportResult> {
-    this.logger.info('Starting resource import into CDK stack...');
+    this.logger.info('Starting resource import preparation...');
 
     const { targetDir, region, autoApprove } = state.config;
 
@@ -57,15 +61,53 @@ export class ImportExecutor extends BaseStepExecutor {
       this.cloudformation = new AWS.CloudFormation({ region });
     }
 
-    // Get list of resources to import
-    const scanData = state.stepResults[MigrationStep.INITIAL_SCAN].data;
-    const resourcesToImport = scanData.inventory.stateful.map((r: any) => ({
-      logicalId: r.logicalId,
-      physicalId: r.physicalId,
-      type: r.type
-    }));
+    // Get comparison results (preferred) or fall back to scan data
+    const comparisonResult = state.stepResults[MigrationStep.COMPARISON]?.data;
+    const cdkOutputPath = path.join(targetDir, 'cdk');
 
-    this.logger.info(`Importing ${resourcesToImport.length} resources into CDK stack...`);
+    let importableCount = 0;
+    let skippedCount = 0;
+    let warnings: string[] = [];
+    let resourcesToImport: string[] = [];
+
+    if (comparisonResult) {
+      // Use ImportResourceGenerator to create import-resources.json from comparison
+      this.logger.info('Generating import resources from comparison results...');
+
+      const generator = new ImportResourceGenerator();
+      const generationResult = await generator.generateImportResources(
+        comparisonResult,
+        cdkOutputPath
+      );
+
+      importableCount = generationResult.importableCount;
+      skippedCount = generationResult.skippedCount;
+      warnings = generationResult.warnings;
+      resourcesToImport = generationResult.importResources.map(r => r.logicalResourceId);
+
+      this.logger.info(`Generated import resources: ${importableCount} importable, ${skippedCount} skipped`);
+
+      if (warnings.length > 0) {
+        this.logger.warn(`Import generation warnings: ${warnings.length}`);
+        warnings.forEach(w => this.logger.warn(`  - ${w}`));
+      }
+    } else {
+      // Fallback: use scan data (old behavior)
+      this.logger.warn('No comparison results available, using scan data (less accurate)');
+      const scanData = state.stepResults[MigrationStep.INITIAL_SCAN].data;
+      const scanResources = scanData.inventory.stateful.map((r: any) => ({
+        logicalId: r.logicalId,
+        physicalId: r.physicalId,
+        type: r.type
+      }));
+
+      // Create simple import mapping
+      await this.createImportMapping(cdkOutputPath, scanResources);
+      resourcesToImport = scanResources.map((r: any) => r.logicalId);
+      importableCount = resourcesToImport.length;
+    }
+
+    this.logger.info(`Prepared ${resourcesToImport.length} resources for import`);
 
     let importMethod: 'interactive' | 'automatic';
     let importOutput = '';
@@ -73,11 +115,15 @@ export class ImportExecutor extends BaseStepExecutor {
 
     if (state.config.dryRun) {
       this.logger.info('Dry-run mode: skipping actual import');
+      this.logger.info('✅ Import preparation completed (dry-run)');
+      this.logger.info(`Files generated in: ${cdkOutputPath}`);
+      this.logger.info('  - import-resources.json (CDK import file)');
+      this.logger.info('  - IMPORT_PLAN.md (human-readable instructions)');
       importMethod = 'automatic';
       importOutput = 'Skipped (dry-run mode)';
     } else {
-      // Prepare import mapping file
-      const importMapPath = await this.createImportMapping(targetDir, resourcesToImport);
+      // Import resources using the generated import-resources.json
+      this.logger.info('Starting CDK import process...');
 
       if (autoApprove) {
         // Automatic import using --auto-approve
@@ -85,11 +131,25 @@ export class ImportExecutor extends BaseStepExecutor {
         importMethod = 'automatic';
 
         try {
-          importOutput = execSync(`cdk import --auto-approve`, {
-            cwd: targetDir,
-            encoding: 'utf-8',
-            stdio: 'pipe'
-          });
+          // Use the generated import-resources.json file
+          const importResourcesPath = path.join(cdkOutputPath, 'import-resources.json');
+          const importFileExists = await fs.access(importResourcesPath).then(() => true).catch(() => false);
+
+          if (importFileExists) {
+            this.logger.info('Using generated import-resources.json for import');
+            importOutput = execSync(`cdk import --resource-mapping import-resources.json --auto-approve`, {
+              cwd: cdkOutputPath,
+              encoding: 'utf-8',
+              stdio: 'pipe'
+            });
+          } else {
+            this.logger.warn('import-resources.json not found, using interactive import');
+            importOutput = execSync(`cdk import --auto-approve`, {
+              cwd: cdkOutputPath,
+              encoding: 'utf-8',
+              stdio: 'pipe'
+            });
+          }
 
           this.logger.info('Import completed successfully');
 
@@ -100,11 +160,11 @@ export class ImportExecutor extends BaseStepExecutor {
       } else {
         // Interactive import
         this.logger.info('Running interactive import...');
-        this.logger.info('You will be prompted to provide physical resource IDs');
+        this.logger.info('Review the IMPORT_PLAN.md file for instructions');
         importMethod = 'interactive';
 
         try {
-          importOutput = await this.runInteractiveImport(targetDir);
+          importOutput = await this.runInteractiveImport(cdkOutputPath);
         } catch (error: any) {
           this.logger.error('Import failed', error);
           throw new Error(`CDK import failed: ${error.message}`);
@@ -126,13 +186,20 @@ export class ImportExecutor extends BaseStepExecutor {
     }
 
     const result: ImportResult = {
-      importedResources: resourcesToImport.map((r: any) => r.logicalId),
+      importedResources: resourcesToImport,
       importMethod,
       importOutput,
-      stackId
+      stackId,
+      importableCount,
+      skippedCount,
+      warnings
     };
 
-    this.logger.info(`✅ Imported ${resourcesToImport.length} resources into CDK stack`);
+    this.logger.info(`✅ Import preparation completed`);
+    this.logger.info(`   Importable resources: ${importableCount}`);
+    if (skippedCount > 0) {
+      this.logger.warn(`   Skipped resources: ${skippedCount}`);
+    }
 
     return result;
   }
@@ -206,19 +273,29 @@ export class ImportExecutor extends BaseStepExecutor {
       });
     }
 
-    // Check 4: All resources imported
-    if (result?.data?.importedResources) {
-      const scanData = state.stepResults[MigrationStep.INITIAL_SCAN].data;
-      const expectedCount = scanData.inventory.stateful.length;
-      const actualCount = result.data.importedResources.length;
+    // Check 4: All resources prepared for import
+    if (result?.data?.importableCount !== undefined) {
+      const importableCount = result.data.importableCount;
+      const skippedCount = result.data.skippedCount || 0;
+      const totalCount = importableCount + skippedCount;
 
       checks.push({
-        name: 'all-resources-imported',
-        passed: actualCount === expectedCount,
-        message: actualCount === expectedCount
-          ? `All ${expectedCount} resources imported`
-          : `Imported ${actualCount} of ${expectedCount} resources`,
-        severity: actualCount === expectedCount ? 'info' as const : 'warning' as const
+        name: 'resources-prepared',
+        passed: importableCount > 0,
+        message: skippedCount > 0
+          ? `${importableCount} resources prepared, ${skippedCount} skipped`
+          : `All ${importableCount} resources prepared for import`,
+        severity: importableCount > 0 ? 'info' as const : 'error' as const
+      });
+    }
+
+    // Check 5: Import generation warnings
+    if (result?.data?.warnings && result.data.warnings.length > 0) {
+      checks.push({
+        name: 'import-warnings',
+        passed: false,
+        message: `${result.data.warnings.length} warnings during import preparation`,
+        severity: 'warning' as const
       });
     }
 

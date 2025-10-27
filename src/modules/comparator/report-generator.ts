@@ -391,6 +391,104 @@ export function generateHTMLReport(report: ComparisonReport): string {
     }
   </div>
 
+  ${
+    report.ready_for_import
+      ? `
+  <div class="summary">
+    <h2>📦 Import Instructions</h2>
+    <p>Your CDK stack is ready to import existing AWS resources. The migration tool has generated the necessary import files:</p>
+
+    <div style="background: #f9f9f9; padding: 15px; border-radius: 4px; margin: 15px 0; border-left: 4px solid green;">
+      <h3 style="margin-top: 0;">Generated Files</h3>
+      <ul>
+        <li><strong>import-resources.json</strong> - CDK import resource mapping</li>
+        <li><strong>IMPORT_PLAN.md</strong> - Detailed import instructions and troubleshooting</li>
+      </ul>
+    </div>
+
+    <div style="background: #f0f8ff; padding: 15px; border-radius: 4px; margin: 15px 0; border-left: 4px solid blue;">
+      <h3 style="margin-top: 0;">Option 1: Automatic Import (Recommended)</h3>
+      <p>Navigate to your CDK directory and run:</p>
+      <pre style="background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 4px;">cd cdk
+cdk import --resource-mapping import-resources.json</pre>
+      <p style="color: #666; font-size: 14px; margin: 10px 0 0 0;">
+        ℹ️ This command will import ${report.summary.total_resources} resource${report.summary.total_resources !== 1 ? 's' : ''} into your CDK stack without recreating them.
+      </p>
+    </div>
+
+    <div style="background: #fffaf0; padding: 15px; border-radius: 4px; margin: 15px 0; border-left: 4px solid orange;">
+      <h3 style="margin-top: 0;">Option 2: Review First (Safer)</h3>
+      <ol>
+        <li>Review the <code>IMPORT_PLAN.md</code> file in your CDK directory</li>
+        <li>Verify resource identifiers are correct</li>
+        <li>Run the import command from Option 1</li>
+      </ol>
+    </div>
+
+    ${
+      report.summary.status.WARNING > 0 || report.summary.status.ACCEPTABLE > 0
+        ? `
+    <div style="background: #fff5f5; padding: 15px; border-radius: 4px; margin: 15px 0; border-left: 4px solid orange;">
+      <h3 style="margin-top: 0;">⚠️ Note: Property Differences Detected</h3>
+      <p>Some resources have property differences (${
+        report.summary.status.WARNING + report.summary.status.ACCEPTABLE
+      } resource${
+            report.summary.status.WARNING + report.summary.status.ACCEPTABLE !== 1
+              ? 's'
+              : ''
+          }):</p>
+      <ul>
+        ${
+          report.summary.status.WARNING > 0
+            ? `<li><strong>${report.summary.status.WARNING} Warning${report.summary.status.WARNING !== 1 ? 's' : ''}</strong> - Review recommended but import should succeed</li>`
+            : ''
+        }
+        ${
+          report.summary.status.ACCEPTABLE > 0
+            ? `<li><strong>${report.summary.status.ACCEPTABLE} Acceptable difference${report.summary.status.ACCEPTABLE !== 1 ? 's' : ''}</strong> - Expected differences (e.g., CDK-managed values)</li>`
+            : ''
+        }
+      </ul>
+      <p style="color: #666; font-size: 14px;">
+        These differences won't prevent import. After import, run <code>cdk diff</code> to verify the actual state.
+      </p>
+    </div>
+    `
+        : ''
+    }
+
+    <div style="background: #f9f9f9; padding: 15px; border-radius: 4px; margin: 15px 0;">
+      <h3 style="margin-top: 0;">What Happens During Import?</h3>
+      <ol>
+        <li>CDK creates a new CloudFormation stack</li>
+        <li>Existing resources are adopted into the stack (no downtime)</li>
+        <li>CloudFormation now manages your resources via CDK</li>
+        <li>You can use <code>cdk deploy</code> for future updates</li>
+      </ol>
+    </div>
+
+    <div style="background: #f5f5f5; padding: 15px; border-radius: 4px; margin: 15px 0;">
+      <h3 style="margin-top: 0;">After Import</h3>
+      <ul>
+        <li>Run <code>cdk diff</code> to verify no unexpected changes</li>
+        <li>Run <code>aws cloudformation drift-detection</code> if needed</li>
+        <li>Your Serverless Framework stack can be safely removed: <code>serverless remove</code></li>
+      </ul>
+    </div>
+  </div>
+  `
+      : `
+  <div class="summary">
+    <h2>🚫 Import Blocked</h2>
+    <p style="color: red; font-weight: bold;">
+      Your migration has ${report.blocking_issues.length} blocking issue${report.blocking_issues.length !== 1 ? 's' : ''}
+      that must be resolved before importing resources.
+    </p>
+    <p>Please review the blocking issues above and the resource details below, then re-run the comparison after making necessary changes.</p>
+  </div>
+  `
+  }
+
   <h2>Resource Details</h2>
 
   ${report.resources
