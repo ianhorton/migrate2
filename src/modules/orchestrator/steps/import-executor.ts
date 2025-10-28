@@ -72,7 +72,7 @@ export class ImportExecutor extends BaseStepExecutor {
 
     if (comparisonResult) {
       // Use ImportResourceGenerator to create import-resources.json from comparison
-      this.logger.info('Generating import resources from comparison results...');
+      this.logger.debug('Generating import resources from comparison results...');
 
       const generator = new ImportResourceGenerator();
       const generationResult = await generator.generateImportResources(
@@ -85,15 +85,15 @@ export class ImportExecutor extends BaseStepExecutor {
       warnings = generationResult.warnings;
       resourcesToImport = generationResult.importResources.map(r => r.logicalResourceId);
 
-      this.logger.info(`Generated import resources: ${importableCount} importable, ${skippedCount} skipped`);
+      this.logger.debug(`Generated import resources: ${importableCount} importable, ${skippedCount} skipped`);
 
       if (warnings.length > 0) {
-        this.logger.warn(`Import generation warnings: ${warnings.length}`);
-        warnings.forEach(w => this.logger.warn(`  - ${w}`));
+        this.logger.debug(`Import generation warnings: ${warnings.length}`);
+        warnings.forEach(w => this.logger.debug(`  - ${w}`));
       }
     } else {
       // Fallback: use scan data (old behavior)
-      this.logger.warn('No comparison results available, using scan data (less accurate)');
+      this.logger.debug('No comparison results available, using scan data (less accurate)');
       const scanData = state.stepResults[MigrationStep.INITIAL_SCAN].data;
       const scanResources = scanData.inventory.stateful.map((r: any) => ({
         logicalId: r.logicalId,
@@ -107,18 +107,25 @@ export class ImportExecutor extends BaseStepExecutor {
       importableCount = resourcesToImport.length;
     }
 
-    this.logger.info(`Prepared ${resourcesToImport.length} resources for import`);
+    this.logger.debug(`Prepared ${resourcesToImport.length} resources for import`);
 
     let importMethod: 'interactive' | 'automatic';
     let importOutput = '';
     let stackId: string | undefined;
 
     if (state.config.dryRun) {
-      this.logger.info('Dry-run mode: skipping actual import');
-      this.logger.info('✅ Import preparation completed (dry-run)');
-      this.logger.info(`Files generated in: ${cdkOutputPath}`);
-      this.logger.info('  - import-resources.json (CDK import file)');
-      this.logger.info('  - IMPORT_PLAN.md (human-readable instructions)');
+      this.logger.userMessage('✅ Import Preparation Complete (Dry-Run Mode)');
+      this.logger.userInstructions('Generated Files', [
+        `Location: ${cdkOutputPath}`,
+        'import-resources.json - CDK import mapping file',
+        'IMPORT_PLAN.md - Detailed instructions and guidance'
+      ]);
+      this.logger.userInstructions('Next Steps - Import Resources into CDK', [
+        `cd ${cdkOutputPath}`,
+        'Review IMPORT_PLAN.md for detailed instructions',
+        'Run: cdk import --resource-mapping import-resources.json',
+        'Or use: cdk import --resource-mapping import-resources.json --force (skip prompts)'
+      ]);
       importMethod = 'automatic';
       importOutput = 'Skipped (dry-run mode)';
     } else {

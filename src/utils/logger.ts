@@ -59,4 +59,28 @@ export class Logger {
   public debug(message: string, meta?: any): void {
     this.logger.debug(message, meta);
   }
+
+  /**
+   * Log critical user-facing message that stands out from regular logs
+   * Use for important instructions that users must not miss
+   */
+  public userMessage(message: string): void {
+    // Output without timestamp/context for clarity
+    const chalk = require('chalk');
+    console.log('\n' + chalk.bold.cyan('═'.repeat(80)));
+    console.log(chalk.bold.cyan('  ' + message));
+    console.log(chalk.bold.cyan('═'.repeat(80)) + '\n');
+  }
+
+  /**
+   * Log user instructions in a clear, formatted way
+   */
+  public userInstructions(title: string, instructions: string[]): void {
+    const chalk = require('chalk');
+    console.log('\n' + chalk.bold.yellow('┌─ ' + title + ' ─'.padEnd(78, '─') + '┐'));
+    instructions.forEach((instruction, i) => {
+      console.log(chalk.yellow(`│ ${i + 1}. ${instruction.padEnd(75)}│`));
+    });
+    console.log(chalk.bold.yellow('└' + '─'.repeat(78) + '┘\n'));
+  }
 }

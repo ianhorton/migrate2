@@ -177,6 +177,23 @@ export class RemoveExecutor extends BaseStepExecutor {
 
     this.logger.info(`✅ Removed ${removedResources.length} resources from stack`);
 
+    // Provide clear instructions to user based on mode
+    if (state.config.dryRun) {
+      this.logger.userMessage('IMPORTANT: Dry-Run Mode - Manual Action Required');
+      this.logger.userInstructions('Next Steps', [
+        `Modified template saved to: ${modifiedTemplatePath}`,
+        'You must manually deploy this template to remove resources from the stack:',
+        `  Option A: serverless deploy (from ${sourceDir})`,
+        '  Option B: AWS Console -> CloudFormation -> Update Stack with the file above',
+        'This will remove resources from CloudFormation BUT keep them in AWS',
+        'After deployment, resources can be imported into your CDK stack'
+      ]);
+    } else {
+      this.logger.userMessage(`✅ Successfully removed ${removedResources.length} resources from Serverless stack`);
+      console.log('Resources are no longer managed by Serverless but still exist in AWS');
+      console.log('You can now proceed to import them into your CDK stack\n');
+    }
+
     return result;
   }
 
