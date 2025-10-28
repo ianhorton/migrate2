@@ -29,6 +29,7 @@ export function createMigrateCommand(): Command {
     .option('-t, --target <dir>', 'Target directory for CDK output')
     .option('--stage <stage>', 'Serverless stage to migrate')
     .option('--region <region>', 'AWS region')
+    .option('--profile <name>', 'AWS profile name')
     .option('--dry-run', 'Run migration in dry-run mode (no changes applied)')
     .option('--auto-approve', 'Skip approval prompts')
     .option('--resume <id>', 'Resume a previous migration')
@@ -102,6 +103,7 @@ async function executeMigration(options: any): Promise<void> {
         region: options.region || process.env.AWS_REGION || 'us-east-1',
         accountId: process.env.AWS_ACCOUNT_ID || '',
         stackName: '',
+        profile: options.profile || process.env.AWS_PROFILE,
         dryRun: resolvedConfig.dryRun,
         autoApprove: options.autoApprove || false,
         backupEnabled: !options.skipBackup,
@@ -156,6 +158,7 @@ async function executeMigration(options: any): Promise<void> {
         region: answers.region,
         accountId: process.env.AWS_ACCOUNT_ID || '',
         stackName: answers.stackName,
+        profile: process.env.AWS_PROFILE,
         dryRun: resolvedConfig.dryRun,
         autoApprove: false,
         backupEnabled: answers.backupEnabled,

@@ -122,12 +122,17 @@ export class ImportExecutor extends BaseStepExecutor {
       ]);
 
       this.logger.userMessage('📋 Three-Step Migration Process');
+
+      const profileFlag = state.config.profile ? ` --profile ${state.config.profile}` : '';
+      const updateStackCmd = `aws cloudformation update-stack --stack-name ${state.config.stackName} \\
+  --template-body file://.serverless/cloudformation-template-protected.json \\
+  --capabilities CAPABILITY_NAMED_IAM${profileFlag}`;
+      const waitCmd = `aws cloudformation wait stack-update-complete --stack-name ${state.config.stackName}${profileFlag}`;
+
       this.logger.userInstructions('Step 1: Deploy Protected Template', [
         `cd ${state.config.sourceDir}`,
-        `aws cloudformation update-stack --stack-name ${state.config.stackName} \\`,
-        '  --template-body file://.serverless/cloudformation-template-protected.json \\',
-        '  --capabilities CAPABILITY_NAMED_IAM',
-        `aws cloudformation wait stack-update-complete --stack-name ${state.config.stackName}`
+        updateStackCmd,
+        waitCmd
       ]);
 
       this.logger.userInstructions('Step 2: Delete Serverless Stack', [

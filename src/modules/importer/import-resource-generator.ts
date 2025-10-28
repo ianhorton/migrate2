@@ -251,13 +251,20 @@ ${warnings.length > 0 ? warnings.map((w, i) => `${i + 1}. ${w}`).join('\n') : '_
 **Step 1: Deploy Protected Template (Adds DeletionPolicy: Retain)**
 \`\`\`bash
 cd <serverless-project-directory>
+
+# If using AWS profile:
 aws cloudformation update-stack \\
   --stack-name <your-stack-name> \\
   --template-body file://.serverless/cloudformation-template-protected.json \\
-  --capabilities CAPABILITY_NAMED_IAM
+  --capabilities CAPABILITY_NAMED_IAM \\
+  --profile <your-profile-name>
 
 # Wait for completion
-aws cloudformation wait stack-update-complete --stack-name <your-stack-name>
+aws cloudformation wait stack-update-complete \\
+  --stack-name <your-stack-name> \\
+  --profile <your-profile-name>
+
+# Or if using default credentials (omit --profile)
 \`\`\`
 
 **Step 2: Delete Serverless Stack (Stateful Resources Will Be Retained)**

@@ -60,6 +60,7 @@ export interface MigrationConfig {
   region: string;
   accountId: string;
   stackName: string;
+  profile?: string;  // AWS profile name
   dryRun: boolean;
   autoApprove: boolean;
   backupEnabled: boolean;
