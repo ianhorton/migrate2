@@ -215,20 +215,19 @@ ${warnings.length > 0 ? warnings.map((w, i) => `${i + 1}. ${w}`).join('\n') : '_
 
 ## Next Steps
 
-### Option 1: Automatic Import (Recommended)
-Run the provided import script:
-\`\`\`bash
-./run-import.sh
-\`\`\`
-
-### Option 2: Manual Import
+### Option 1: Import Resources (Recommended)
 1. Review the resources in \`import-resources.json\`
 2. Run CDK import command:
    \`\`\`bash
    cdk import --resource-mapping import-resources.json
    \`\`\`
 
-### Option 3: Destroy and Recreate (Causes Downtime!)
+   Or for automatic approval:
+   \`\`\`bash
+   cdk import --resource-mapping import-resources.json --force
+   \`\`\`
+
+### Option 2: Destroy and Recreate (Causes Downtime!)
 If import fails or is not suitable:
 1. Delete the Serverless stack: \`serverless remove\`
 2. Deploy CDK normally: \`cdk deploy\`
