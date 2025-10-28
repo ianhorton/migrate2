@@ -330,6 +330,7 @@ export class TypeScriptGenerator {
       /^new (lambda|dynamodb|s3|iam|logs|cdk)\./,  // Constructor calls
       /^\{[\s\S]*\}$/,  // Object literals
       /^\[[\s\S]*\]$/,  // Array literals
+      /^[a-z][a-zA-Z0-9]*$/,  // Variable names (camelCase identifiers)
     ];
 
     return cdkPatterns.some((pattern) => pattern.test(value));
