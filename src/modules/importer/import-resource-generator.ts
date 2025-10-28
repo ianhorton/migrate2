@@ -230,37 +230,45 @@ ${warnings.length > 0 ? warnings.map((w, i) => `${i + 1}. ${w}`).join('\n') : '_
 
 ## Next Steps
 
-### Option 1: Import Stateful Resources, Then Deploy (Recommended)
+### Critical: Delete Serverless Stack First
 
-**Step 1: Import stateful resources**
-1. Review the resources in \`import-resources.json\` (only stateful resources)
-2. Run CDK import command:
-   \`\`\`bash
-   cdk import --resource-mapping import-resources.json
-   \`\`\`
+**⚠️  IMPORTANT**: Before importing, you must delete the Serverless Framework stack to avoid resource conflicts:
 
-   Or for automatic approval:
-   \`\`\`bash
-   cdk import --resource-mapping import-resources.json --force
-   \`\`\`
-
-**Step 2: Deploy to recreate stateless resources**
-After import succeeds, deploy your CDK stack to create stateless resources:
 \`\`\`bash
-cdk deploy
+cd <serverless-project-directory>
+serverless remove
 \`\`\`
 
-This will create:
-- Lambda functions (fresh deployment packages)
-- IAM roles and policies
-- API Gateway resources
-- Other stateless infrastructure
+This is safe because:
+- Stateful resources (DynamoDB, S3) have DeletionPolicy: Retain and will NOT be deleted
+- Stateless resources (Lambda, IAM) will be deleted, but CDK will recreate them
 
-### Option 2: Destroy and Recreate (Causes Downtime!)
-If import fails or is not suitable:
-1. Delete the Serverless stack: \`serverless remove\`
-2. Deploy CDK normally: \`cdk deploy\`
-   ⚠️  **WARNING**: This will recreate all resources and cause downtime!
+### Import and Deploy Process
+
+**Step 1: Delete Serverless Stack**
+\`\`\`bash
+serverless remove  # Removes stack but retains stateful resources
+\`\`\`
+
+**Step 2: Import stateful resources into CDK**
+\`\`\`bash
+cdk import --resource-mapping import-resources.json
+\`\`\`
+
+This imports ONLY stateful resources (DynamoDB, S3, etc.) and creates fresh stateless resources (Lambda, IAM, API Gateway).
+
+**Alternative: Use --force if needed**
+\`\`\`bash
+cdk import --resource-mapping import-resources.json --force
+\`\`\`
+
+### What Happens During Import
+
+1. CDK creates/updates your CloudFormation stack
+2. Imports stateful resources (DynamoDB tables, S3 buckets) - no data loss
+3. Creates NEW Lambda functions with fresh code
+4. Creates NEW IAM roles and policies
+5. All resources now managed by CDK
 
 ## Import Process
 

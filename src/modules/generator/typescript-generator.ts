@@ -632,9 +632,16 @@ ${properties}
           }
         }
       } else if (key === 'Role') {
-        // Skip role property - Lambda L2 construct doesn't support role directly
-        // The role association should be handled via grantInvoke() or addToRolePolicy()
-        // For imported resources, we'll let CDK infer the role
+        // Extract role reference for Lambda L2 construct
+        const roleValue = value as any;
+        if (roleValue && roleValue['Fn::GetAtt']) {
+          const roleRef = roleValue['Fn::GetAtt'][0];
+          const roleVar = this.toCamelCase(roleRef);
+          transformed.role = roleVar;
+        } else if (roleValue && roleValue.Ref) {
+          const roleVar = this.toCamelCase(roleValue.Ref);
+          transformed.role = roleVar;
+        }
       }
     }
 

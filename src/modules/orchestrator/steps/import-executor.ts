@@ -123,11 +123,17 @@ export class ImportExecutor extends BaseStepExecutor {
       this.logger.userMessage('📋 Migration Strategy');
       console.log('Stateful resources (DynamoDB, S3, etc.) → IMPORT to preserve data');
       console.log('Stateless resources (Lambda, IAM, etc.) → RECREATE with cdk deploy\n');
+      this.logger.userMessage('⚠️  CRITICAL: Delete Serverless Stack Before Import');
+      console.log('To avoid resource conflicts, you MUST delete the Serverless stack first:');
+      console.log(`  cd ${state.config.sourceDir}`);
+      console.log('  serverless remove');
+      console.log('\nThis is SAFE - stateful resources have DeletionPolicy: Retain\n');
       this.logger.userInstructions('Next Steps', [
+        `cd ${state.config.sourceDir}`,
+        'serverless remove  # Delete stack (stateful resources will be retained)',
         `cd ${cdkOutputPath}`,
-        'Review IMPORT_PLAN.md for complete instructions',
-        'Step 1: cdk import --resource-mapping import-resources.json',
-        'Step 2: cdk deploy (recreates Lambda, IAM, API Gateway, etc.)'
+        'cdk import --resource-mapping import-resources.json',
+        'This imports stateful resources AND creates new Lambda/IAM resources'
       ]);
       importMethod = 'automatic';
       importOutput = 'Skipped (dry-run mode)';
