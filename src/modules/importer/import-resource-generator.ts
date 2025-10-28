@@ -243,6 +243,31 @@ The import process will:
 
 ## Troubleshooting
 
+### "No resource updates or deletes are allowed on import operation"
+**Cause**: CDK detects differences between your generated code and the actual AWS resource.
+
+**Common Issue with Lambda Functions**: Missing \`overrideLogicalId()\` call.
+
+**Solution**:
+1. Open your CDK stack file (e.g., \`lib/*-stack.ts\`)
+2. Find the Lambda function definition
+3. Add the overrideLogicalId right after the function definition:
+   \`\`\`typescript
+   const myFunction = new lambda.Function(this, 'MyFunction', { ... });
+   // Add this line (replace with actual CloudFormation logical ID):
+   (myFunction.node.defaultChild as cdk.CfnResource).overrideLogicalId('HelloLambdaFunction3DCA9067');
+   \`\`\`
+4. Also add role assignment if missing:
+   \`\`\`typescript
+   role: iamRoleLambdaExecution
+   \`\`\`
+5. Re-run: \`cdk import --resource-mapping import-resources.json\`
+
+**Alternative**: Use \`--force\` flag but CDK may try to update the resource:
+\`\`\`bash
+cdk import --resource-mapping import-resources.json --force
+\`\`\`
+
 ### Import fails with "Resource already exists"
 This means CDK is trying to CREATE instead of IMPORT. Ensure:
 - The stack doesn't already exist in CloudFormation
@@ -256,6 +281,7 @@ Run a drift detection after import to verify.
 ## Additional Resources
 - [CDK Import Documentation](https://docs.aws.amazon.com/cdk/v2/guide/resources.html#resources_importing)
 - [CloudFormation Import](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resource-import.html)
+- [Resource Import Troubleshooting](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resource-import-troubleshooting.html)
 `;
 
     await fs.writeFile(filePath, content, 'utf-8');
