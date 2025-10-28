@@ -129,6 +129,29 @@ export const STATELESS_RESOURCE_TYPES = [
   'AWS::SQS::Queue',
 ] as const;
 
+/**
+ * Serverless Framework infrastructure resources (should NOT be migrated to CDK)
+ * These are created by Serverless for its own deployment needs
+ */
+export const SERVERLESS_INFRASTRUCTURE_PATTERNS = [
+  'ServerlessDeploymentBucket',           // S3 bucket for deployment artifacts
+  'ServerlessDeploymentBucketPolicy',     // Policy for deployment bucket
+  /.*LambdaVersion.*/,                    // Lambda versions (auto-generated with hash)
+  /ApiGatewayDeployment\d+/,              // API Gateway deployments (timestamped)
+] as const;
+
+/**
+ * Check if a resource is Serverless Framework infrastructure
+ */
+export function isServerlessInfrastructure(logicalId: string): boolean {
+  return SERVERLESS_INFRASTRUCTURE_PATTERNS.some(pattern => {
+    if (typeof pattern === 'string') {
+      return logicalId === pattern;
+    }
+    return pattern.test(logicalId);
+  });
+}
+
 export type StatefulResourceType = typeof STATEFUL_RESOURCE_TYPES[number];
 export type StatelessResourceType = typeof STATELESS_RESOURCE_TYPES[number];
 export type KnownResourceType = StatefulResourceType | StatelessResourceType;

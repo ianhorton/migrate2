@@ -6,7 +6,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Logger } from '../../utils/logger';
-import { STATEFUL_RESOURCE_TYPES, STATELESS_RESOURCE_TYPES } from '../../types/migration';
+import { STATEFUL_RESOURCE_TYPES, STATELESS_RESOURCE_TYPES, isServerlessInfrastructure } from '../../types/migration';
 
 export interface ComparisonResource {
   resourceType: string;
@@ -78,10 +78,26 @@ export class ImportResourceGenerator {
 
     // Process each resource
     for (const resource of comparisonResult.resources) {
+      // Skip Serverless Framework infrastructure resources
+      if (isServerlessInfrastructure(resource.cdkLogicalId)) {
+        this.logger.debug(`Skipping Serverless infrastructure: ${resource.cdkLogicalId}`);
+        this.logger.debug('Serverless infrastructure will not be migrated to CDK');
+        skippedCount++;
+        continue;
+      }
+
       // Skip stateless resources - they should be recreated, not imported
       if (STATELESS_RESOURCE_TYPES.includes(resource.resourceType as any)) {
         this.logger.debug(`Skipping stateless resource: ${resource.cdkLogicalId} (${resource.resourceType})`);
         this.logger.debug('Stateless resources will be recreated by cdk deploy');
+        skippedCount++;
+        continue;
+      }
+
+      // Skip LogGroups - CDK will recreate them (logs are transient)
+      if (resource.resourceType === 'AWS::Logs::LogGroup') {
+        this.logger.debug(`Skipping LogGroup: ${resource.cdkLogicalId}`);
+        this.logger.debug('LogGroups will be recreated by CDK');
         skippedCount++;
         continue;
       }
@@ -230,45 +246,54 @@ ${warnings.length > 0 ? warnings.map((w, i) => `${i + 1}. ${w}`).join('\n') : '_
 
 ## Next Steps
 
-### Critical: Delete Serverless Stack First
+### Three-Step Migration Process
 
-**⚠️  IMPORTANT**: Before importing, you must delete the Serverless Framework stack to avoid resource conflicts:
-
+**Step 1: Deploy Protected Template (Adds DeletionPolicy: Retain)**
 \`\`\`bash
 cd <serverless-project-directory>
+aws cloudformation update-stack \\
+  --stack-name <your-stack-name> \\
+  --template-body file://.serverless/cloudformation-template-protected.json \\
+  --capabilities CAPABILITY_NAMED_IAM
+
+# Wait for completion
+aws cloudformation wait stack-update-complete --stack-name <your-stack-name>
+\`\`\`
+
+**Step 2: Delete Serverless Stack (Stateful Resources Will Be Retained)**
+\`\`\`bash
 serverless remove
 \`\`\`
 
-This is safe because:
-- Stateful resources (DynamoDB, S3) have DeletionPolicy: Retain and will NOT be deleted
-- Stateless resources (Lambda, IAM) will be deleted, but CDK will recreate them
+This is SAFE because:
+- Application resources (DynamoDB tables) have DeletionPolicy: Retain → will NOT be deleted
+- Serverless infrastructure (deployment bucket, Lambda versions) will be deleted → CDK doesn't need them
+- Your data is preserved
 
-### Import and Deploy Process
-
-**Step 1: Delete Serverless Stack**
+**Step 3: Import Application Resources into CDK**
 \`\`\`bash
-serverless remove  # Removes stack but retains stateful resources
-\`\`\`
-
-**Step 2: Import stateful resources into CDK**
-\`\`\`bash
+cd <cdk-output-directory>
 cdk import --resource-mapping import-resources.json
 \`\`\`
 
-This imports ONLY stateful resources (DynamoDB, S3, etc.) and creates fresh stateless resources (Lambda, IAM, API Gateway).
+This imports ONLY application resources (DynamoDB tables) and creates fresh Lambda/IAM resources.
 
-**Alternative: Use --force if needed**
-\`\`\`bash
-cdk import --resource-mapping import-resources.json --force
-\`\`\`
+### What Gets Migrated vs. What Doesn't
+
+**✅ Imported to CDK** (Application Resources):
+${resources.filter(r => !isServerlessInfrastructure(r.logicalResourceId)).map(r => `- ${r.logicalResourceId} (${r.resourceType})`).join('\n') || '- None'}
+
+**❌ NOT Migrated** (Serverless Infrastructure - CDK creates its own):
+- ServerlessDeploymentBucket
+- Lambda versions and deployments
+- CDK will create its own deployment infrastructure
 
 ### What Happens During Import
 
-1. CDK creates/updates your CloudFormation stack
-2. Imports stateful resources (DynamoDB tables, S3 buckets) - no data loss
-3. Creates NEW Lambda functions with fresh code
-4. Creates NEW IAM roles and policies
-5. All resources now managed by CDK
+1. CloudFormation imports your DynamoDB tables (no data loss)
+2. CDK creates NEW Lambda functions with fresh code
+3. CDK creates NEW IAM roles and policies
+4. All resources now managed by CDK
 
 ## Import Process
 

@@ -117,24 +117,34 @@ export class ImportExecutor extends BaseStepExecutor {
       this.logger.userMessage('✅ Import Preparation Complete (Dry-Run Mode)');
       this.logger.userInstructions('Generated Files', [
         `Location: ${cdkOutputPath}`,
-        'import-resources.json - CDK import mapping (STATEFUL resources only)',
-        'IMPORT_PLAN.md - Detailed instructions and migration strategy'
+        'import-resources.json - Application resources to import',
+        'IMPORT_PLAN.md - Complete migration instructions'
       ]);
-      this.logger.userMessage('📋 Migration Strategy');
-      console.log('Stateful resources (DynamoDB, S3, etc.) → IMPORT to preserve data');
-      console.log('Stateless resources (Lambda, IAM, etc.) → RECREATE with cdk deploy\n');
-      this.logger.userMessage('⚠️  CRITICAL: Delete Serverless Stack Before Import');
-      console.log('To avoid resource conflicts, you MUST delete the Serverless stack first:');
-      console.log(`  cd ${state.config.sourceDir}`);
-      console.log('  serverless remove');
-      console.log('\nThis is SAFE - stateful resources have DeletionPolicy: Retain\n');
-      this.logger.userInstructions('Next Steps', [
+
+      this.logger.userMessage('📋 Three-Step Migration Process');
+      this.logger.userInstructions('Step 1: Deploy Protected Template', [
         `cd ${state.config.sourceDir}`,
-        'serverless remove  # Delete stack (stateful resources will be retained)',
-        `cd ${cdkOutputPath}`,
-        'cdk import --resource-mapping import-resources.json',
-        'This imports stateful resources AND creates new Lambda/IAM resources'
+        `aws cloudformation update-stack --stack-name ${state.config.stackName} \\`,
+        '  --template-body file://.serverless/cloudformation-template-protected.json \\',
+        '  --capabilities CAPABILITY_NAMED_IAM',
+        `aws cloudformation wait stack-update-complete --stack-name ${state.config.stackName}`
       ]);
+
+      this.logger.userInstructions('Step 2: Delete Serverless Stack', [
+        `cd ${state.config.sourceDir}`,
+        'serverless remove  # Application resources retained, Serverless infra deleted'
+      ]);
+
+      this.logger.userInstructions('Step 3: Import to CDK', [
+        `cd ${cdkOutputPath}`,
+        'cdk import --resource-mapping import-resources.json'
+      ]);
+
+      this.logger.userMessage('📊 What Gets Migrated');
+      console.log(`✅ Application Resources: ${importableCount} (DynamoDB tables, etc.)`);
+      console.log(`❌ Serverless Infrastructure: Skipped (CDK creates its own)`);
+      console.log(`❌ Stateless Resources: ${skippedCount} (Lambda, IAM recreated by CDK)\n`);
+
       importMethod = 'automatic';
       importOutput = 'Skipped (dry-run mode)';
     } else {
