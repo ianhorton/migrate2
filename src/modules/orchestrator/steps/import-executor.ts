@@ -117,14 +117,17 @@ export class ImportExecutor extends BaseStepExecutor {
       this.logger.userMessage('✅ Import Preparation Complete (Dry-Run Mode)');
       this.logger.userInstructions('Generated Files', [
         `Location: ${cdkOutputPath}`,
-        'import-resources.json - CDK import mapping file',
-        'IMPORT_PLAN.md - Detailed instructions and guidance'
+        'import-resources.json - CDK import mapping (STATEFUL resources only)',
+        'IMPORT_PLAN.md - Detailed instructions and migration strategy'
       ]);
-      this.logger.userInstructions('Next Steps - Import Resources into CDK', [
+      this.logger.userMessage('📋 Migration Strategy');
+      console.log('Stateful resources (DynamoDB, S3, etc.) → IMPORT to preserve data');
+      console.log('Stateless resources (Lambda, IAM, etc.) → RECREATE with cdk deploy\n');
+      this.logger.userInstructions('Next Steps', [
         `cd ${cdkOutputPath}`,
-        'Review IMPORT_PLAN.md for detailed instructions',
-        'Run: cdk import --resource-mapping import-resources.json',
-        'Or use: cdk import --resource-mapping import-resources.json --force (skip prompts)'
+        'Review IMPORT_PLAN.md for complete instructions',
+        'Step 1: cdk import --resource-mapping import-resources.json',
+        'Step 2: cdk deploy (recreates Lambda, IAM, API Gateway, etc.)'
       ]);
       importMethod = 'automatic';
       importOutput = 'Skipped (dry-run mode)';

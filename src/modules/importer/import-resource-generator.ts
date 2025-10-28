@@ -6,6 +6,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Logger } from '../../utils/logger';
+import { STATEFUL_RESOURCE_TYPES, STATELESS_RESOURCE_TYPES } from '../../types/migration';
 
 export interface ComparisonResource {
   resourceType: string;
@@ -77,6 +78,14 @@ export class ImportResourceGenerator {
 
     // Process each resource
     for (const resource of comparisonResult.resources) {
+      // Skip stateless resources - they should be recreated, not imported
+      if (STATELESS_RESOURCE_TYPES.includes(resource.resourceType as any)) {
+        this.logger.debug(`Skipping stateless resource: ${resource.cdkLogicalId} (${resource.resourceType})`);
+        this.logger.debug('Stateless resources will be recreated by cdk deploy');
+        skippedCount++;
+        continue;
+      }
+
       // Skip resources with CRITICAL status
       if (resource.status === 'CRITICAL') {
         this.logger.warn(`Skipping CRITICAL resource: ${resource.cdkLogicalId}`);
@@ -202,9 +211,15 @@ export class ImportResourceGenerator {
     const content = `# CDK Import Plan
 
 ## Overview
-This file contains the plan for importing existing AWS resources into your CDK stack.
+This file contains the plan for importing existing **stateful** AWS resources into your CDK stack.
 
-## Resources to Import
+**Migration Strategy:**
+- ✅ **Stateful resources** (DynamoDB, S3, RDS, etc.) → **IMPORT** (preserves data)
+- ✅ **Stateless resources** (Lambda, IAM, API Gateway, etc.) → **RECREATE** (no data to lose)
+
+Stateless resources have been automatically excluded from import and will be recreated when you run \`cdk deploy\`.
+
+## Resources to Import (Stateful Only)
 Total resources: ${resources.length}
 
 ${resources.map((r, i) => `${i + 1}. **${r.logicalResourceId}** (${r.resourceType})
@@ -215,8 +230,10 @@ ${warnings.length > 0 ? warnings.map((w, i) => `${i + 1}. ${w}`).join('\n') : '_
 
 ## Next Steps
 
-### Option 1: Import Resources (Recommended)
-1. Review the resources in \`import-resources.json\`
+### Option 1: Import Stateful Resources, Then Deploy (Recommended)
+
+**Step 1: Import stateful resources**
+1. Review the resources in \`import-resources.json\` (only stateful resources)
 2. Run CDK import command:
    \`\`\`bash
    cdk import --resource-mapping import-resources.json
@@ -227,6 +244,18 @@ ${warnings.length > 0 ? warnings.map((w, i) => `${i + 1}. ${w}`).join('\n') : '_
    cdk import --resource-mapping import-resources.json --force
    \`\`\`
 
+**Step 2: Deploy to recreate stateless resources**
+After import succeeds, deploy your CDK stack to create stateless resources:
+\`\`\`bash
+cdk deploy
+\`\`\`
+
+This will create:
+- Lambda functions (fresh deployment packages)
+- IAM roles and policies
+- API Gateway resources
+- Other stateless infrastructure
+
 ### Option 2: Destroy and Recreate (Causes Downtime!)
 If import fails or is not suitable:
 1. Delete the Serverless stack: \`serverless remove\`
@@ -235,11 +264,23 @@ If import fails or is not suitable:
 
 ## Import Process
 
+### Step 1: Import Stateful Resources
 The import process will:
 1. Create a new CDK stack in CloudFormation
-2. Import the existing resources into that stack
-3. Transfer management from Serverless to CDK
+2. Import the existing **stateful** resources into that stack
+3. Transfer management of stateful resources from Serverless to CDK
 4. Preserve all resource data (no downtime)
+
+### Step 2: Recreate Stateless Resources
+After import succeeds, run \`cdk deploy\` to:
+1. Create new stateless resources (Lambda, IAM roles, API Gateway, etc.)
+2. Replace the old Serverless versions
+3. Connect them to your imported stateful resources
+
+**Why this approach?**
+- Stateful resources contain data (DynamoDB tables, S3 buckets) → Must be imported to avoid data loss
+- Stateless resources have no data (Lambda functions, IAM roles) → Safe to recreate
+- This avoids CDK drift errors and follows AWS best practices
 
 ## Troubleshooting
 
