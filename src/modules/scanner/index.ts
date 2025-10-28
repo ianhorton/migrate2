@@ -33,6 +33,13 @@ export class Scanner {
   }
 
   /**
+   * Get the CloudFormation stack name for the given stage
+   */
+  public getStackName(stage: string): string {
+    return this.parser.getStackName(stage);
+  }
+
+  /**
    * Discover all resources from CloudFormation template
    */
   public async discoverResources(template: CloudFormationTemplate): Promise<ResourceInventory> {

@@ -123,10 +123,17 @@ export class ImportExecutor extends BaseStepExecutor {
 
       this.logger.userMessage('📋 Three-Step Migration Process');
 
+      // Check if stack has IAM resources (most Serverless stacks do)
+      const scanData = state.stepResults[MigrationStep.INITIAL_SCAN]?.data;
+      const hasIAMResources = scanData?.inventory?.stateless?.some(
+        (r: any) => r.type === 'AWS::IAM::Role' || r.type === 'AWS::IAM::Policy'
+      ) || false;
+
       const profileFlag = state.config.profile ? ` --profile ${state.config.profile}` : '';
+      const capabilitiesFlag = hasIAMResources ? ' \\\n  --capabilities CAPABILITY_NAMED_IAM' : '';
+
       const updateStackCmd = `aws cloudformation update-stack --stack-name ${state.config.stackName} \\
-  --template-body file://.serverless/cloudformation-template-protected.json \\
-  --capabilities CAPABILITY_NAMED_IAM${profileFlag}`;
+  --template-body file://.serverless/cloudformation-template-protected.json${capabilitiesFlag}${profileFlag}`;
       const waitCmd = `aws cloudformation wait stack-update-complete --stack-name ${state.config.stackName}${profileFlag}`;
 
       this.logger.userInstructions('Step 1: Deploy Protected Template', [

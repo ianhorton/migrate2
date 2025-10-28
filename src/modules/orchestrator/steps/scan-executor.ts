@@ -60,6 +60,11 @@ export class ScanExecutor extends BaseStepExecutor {
     this.logger.info('Parsing Serverless configuration...');
     const serverlessConfig = await scanner.parseServerlessConfig();
 
+    // Step 1.5: Extract and set stack name in config
+    const stackName = scanner.getStackName(stage);
+    state.config.stackName = stackName;
+    this.logger.info(`Detected CloudFormation stack name: ${stackName}`);
+
     // Step 2: Generate CloudFormation template
     this.logger.info(`Generating CloudFormation template for stage: ${stage}`);
     const cfTemplate = await scanner.generateCloudFormation(stage);
