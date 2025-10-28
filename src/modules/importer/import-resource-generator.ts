@@ -60,6 +60,15 @@ export class ImportResourceGenerator {
     const warnings: string[] = [];
     let skippedCount = 0;
 
+    // Validate input
+    if (!comparisonResult) {
+      throw new Error('Comparison result is required');
+    }
+
+    if (!comparisonResult.resources || !Array.isArray(comparisonResult.resources)) {
+      throw new Error('Comparison result must have a resources array');
+    }
+
     // Check if ready for import
     if (!comparisonResult.ready_for_import) {
       this.logger.warn('Comparison result indicates not ready for import');

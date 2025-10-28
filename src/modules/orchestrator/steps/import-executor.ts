@@ -76,7 +76,7 @@ export class ImportExecutor extends BaseStepExecutor {
 
       const generator = new ImportResourceGenerator();
       const generationResult = await generator.generateImportResources(
-        comparisonResult,
+        comparisonResult.report,
         cdkOutputPath
       );
 
