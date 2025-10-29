@@ -11,6 +11,7 @@ import {
   Resource
 } from '../../../types';
 import { Generator, GeneratedCode } from '../../generator';
+import { isServerlessInfrastructure } from '../../../types/migration';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execSync } from 'child_process';
@@ -66,17 +67,26 @@ export class GenerateExecutor extends BaseStepExecutor {
     const generator = new Generator();
 
     // Convert CloudFormation resources to Resource array
-    const resources = Object.entries(cfTemplate.Resources).map(([logicalId, resource]) => ({
-      logicalId,
-      type: resource.Type,
-      properties: resource.Properties,
-      dependencies: Array.isArray(resource.DependsOn)
-        ? resource.DependsOn
-        : resource.DependsOn
-        ? [resource.DependsOn]
-        : [],
-      metadata: resource.Metadata
-    }));
+    // Filter out Serverless Framework infrastructure resources
+    const resources = Object.entries(cfTemplate.Resources)
+      .filter(([logicalId]) => {
+        const isInfra = isServerlessInfrastructure(logicalId);
+        if (isInfra) {
+          this.logger.debug(`Skipping Serverless infrastructure: ${logicalId}`);
+        }
+        return !isInfra;
+      })
+      .map(([logicalId, resource]) => ({
+        logicalId,
+        type: resource.Type,
+        properties: resource.Properties,
+        dependencies: Array.isArray(resource.DependsOn)
+          ? resource.DependsOn
+          : resource.DependsOn
+          ? [resource.DependsOn]
+          : [],
+        metadata: resource.Metadata
+      }));
 
     const cdkCode = await generator.generate(resources, {
       stackName,
